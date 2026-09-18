@@ -23,6 +23,7 @@ final class OnboardingWindowController: NSWindowController {
     private let secondaryButton = NSButton()
     private let progressLabel = Theme.label("", font: Theme.Font.caption, color: .tertiaryLabelColor)
     private let coursesField = NSTextField(string: "")
+    private let helpButton = NSButton()
     private let logLabel = Theme.label("", font: .monospacedSystemFont(ofSize: 10, weight: .regular),
                                        color: .tertiaryLabelColor, lines: 3)
 
@@ -57,7 +58,13 @@ final class OnboardingWindowController: NSWindowController {
         secondaryButton.target = self
         secondaryButton.action = #selector(secondaryTapped)
 
-        let buttons = NSStackView(views: [progressLabel, NSView(), secondaryButton, primaryButton])
+        helpButton.bezelStyle = .helpButton
+        helpButton.title = ""
+        helpButton.target = self
+        helpButton.action = #selector(showHelp)
+        helpButton.toolTip = "Show step by step instructions"
+
+        let buttons = NSStackView(views: [helpButton, progressLabel, NSView(), secondaryButton, primaryButton])
         buttons.orientation = .horizontal
         buttons.alignment = .centerY
         buttons.spacing = 10
@@ -102,7 +109,7 @@ final class OnboardingWindowController: NSWindowController {
     private func show(_ newStep: Step) {
         step = newStep
         clearContent()
-        logLabel.stringValue = ""
+        clearError()
         progressLabel.stringValue = "Step \(newStep.rawValue + 1) of \(Step.allCases.count)"
         secondaryButton.isHidden = newStep == .welcome
 
@@ -142,16 +149,26 @@ final class OnboardingWindowController: NSWindowController {
         case .courses:
             titleLabel.stringValue = "Your courses"
             bodyLabel.stringValue = """
-            One per line, however you want them to appear in Notion. \
+            Type your courses one per line, however you want them to appear in Notion. \
             For example: NLP CS 6120
+
+            Then choose where the notes go. Press "Find my databases" to pick an \
+            existing one, or leave the box unticked and LecRec creates a Course Notes \
+            database for you.
             """
             coursesField.placeholderString = "NLP CS 6120"
             let field = NSTextField(wrappingLabelWithString: "")
             field.isHidden = true
-            let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 440, height: 110))
+            let textView = PlaceholderTextView(frame: NSRect(x: 0, y: 0, width: 440, height: 110))
             textView.font = Theme.Font.body
             textView.string = settings.courses.map(\.name).joined(separator: "\n")
+            textView.placeholder = "NLP CS 6120\nIR CS 6200"
+            textView.delegate = self
             textView.isRichText = false
+            textView.isAutomaticQuoteSubstitutionEnabled = false
+            textView.isAutomaticDashSubstitutionEnabled = false
+            // Otherwise macOS floats a Writing Tools bubble over the field's edge.
+            if #available(macOS 15.0, *) { textView.writingToolsBehavior = .none }
             let scroll = NSScrollView()
             scroll.documentView = textView
             scroll.hasVerticalScroller = true
@@ -161,17 +178,38 @@ final class OnboardingWindowController: NSWindowController {
             content.addArrangedSubview(scroll)
             scroll.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
             courseTextView = textView
+            coursesScroll = scroll
 
             if settings.destination == .notion {
                 reuseCheckbox.title = "I already have a Notion database for these notes"
                 reuseCheckbox.target = self
                 reuseCheckbox.action = #selector(reuseToggled)
                 reuseCheckbox.state = settings.notionDatabaseURL.isEmpty ? .off : .on
-                existingField.placeholderString = "Paste the Notion database URL or its id"
+                existingField.placeholderString = "or paste the database URL or its id"
                 existingField.stringValue = settings.notionDatabaseURL
+
+                databasePopup.removeAllItems()
+                databasePopup.addItem(withTitle: "Choose a database\u{2026}")
+                databasePopup.target = self
+                databasePopup.action = #selector(databasePicked)
+
+                findButton.title = "Find my databases"
+                findButton.bezelStyle = .push
+                findButton.controlSize = .regular
+                findButton.target = self
+                findButton.action = #selector(findDatabases)
+
+                let pickerRow = NSStackView(views: [databasePopup, findButton])
+                pickerRow.orientation = .horizontal
+                pickerRow.spacing = 8
+                pickerRow.alignment = .centerY
+
                 content.addArrangedSubview(reuseCheckbox)
+                content.addArrangedSubview(pickerRow)
                 content.addArrangedSubview(existingField)
+                pickerRow.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
                 existingField.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
+                databasePopup.setContentHuggingPriority(.defaultLow, for: .horizontal)
                 reuseToggled()
             }
             primaryButton.title = primaryTitleForCourses()
@@ -195,9 +233,13 @@ final class OnboardingWindowController: NSWindowController {
         }
     }
 
-    private var courseTextView: NSTextView?
+    private var courseTextView: PlaceholderTextView?
+    private weak var coursesScroll: NSScrollView?
     private let reuseCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let existingField = NSTextField(string: "")
+    private let databasePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let findButton = NSButton()
+    private var candidates: [NotionSetup.Candidate] = []
 
     private var isReusingDatabase: Bool {
         settings.destination == .notion && reuseCheckbox.state == .on
@@ -209,9 +251,50 @@ final class OnboardingWindowController: NSWindowController {
     }
 
     @objc private func reuseToggled() {
-        existingField.isEnabled = isReusingDatabase
-        existingField.isHidden = !isReusingDatabase
+        let on = isReusingDatabase
+        existingField.isEnabled = on
+        existingField.isHidden = !on
+        databasePopup.isEnabled = on && !candidates.isEmpty
+        databasePopup.superview?.isHidden = !on
+        findButton.isEnabled = on
         primaryButton.title = primaryTitleForCourses()
+    }
+
+    /// Asks Notion which databases exist rather than making the user dig an id out
+    /// of a URL. This is the difference between a setup step and a scavenger hunt.
+    @objc private func findDatabases() {
+        findButton.isEnabled = false
+        findButton.title = "Looking\u{2026}"
+        logLabel.stringValue = "Asking Notion which databases you have."
+        Task { @MainActor in
+            do {
+                self.candidates = try await NotionSetup.findDatabases { line in
+                    DispatchQueue.main.async { self.logLabel.stringValue = line }
+                }
+                self.databasePopup.removeAllItems()
+                if self.candidates.isEmpty {
+                    self.databasePopup.addItem(withTitle: "No databases found")
+                    self.logLabel.stringValue = "Nothing came back. Paste a URL, or untick the box to create one."
+                } else {
+                    self.databasePopup.addItem(withTitle: "Choose a database\u{2026}")
+                    self.candidates.forEach { self.databasePopup.addItem(withTitle: $0.title) }
+                    self.logLabel.stringValue = "Found \(self.candidates.count). Pick the one your notes go in."
+                }
+                self.databasePopup.isEnabled = !self.candidates.isEmpty
+            } catch {
+                self.logLabel.stringValue = error.localizedDescription
+            }
+            self.findButton.isEnabled = true
+            self.findButton.title = "Find my databases"
+        }
+    }
+
+    @objc private func databasePicked() {
+        let index = databasePopup.indexOfSelectedItem - 1   // item 0 is the placeholder
+        guard index >= 0, index < candidates.count else { return }
+        let picked = candidates[index]
+        existingField.stringValue = picked.url ?? picked.dataSourceId
+        logLabel.stringValue = "Using \(picked.title)."
     }
 
     private func refreshDependencyRows() {
@@ -220,6 +303,97 @@ final class OnboardingWindowController: NSWindowController {
         let missing = dependencies.filter { $0.isRequired && !$0.isSatisfied }
         primaryButton.isEnabled = missing.isEmpty
         primaryButton.title = missing.isEmpty ? "Continue" : "Install what is missing first"
+    }
+
+    private func showError(_ message: String) {
+        logLabel.stringValue = message
+        logLabel.font = Theme.Font.captionStrong
+        logLabel.textColor = .systemRed
+    }
+
+    private func clearError() {
+        logLabel.stringValue = ""
+        logLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        logLabel.textColor = .tertiaryLabelColor
+        if let scroll = coursesScroll { Validation.clear(scroll) }
+        Validation.clear(existingField)
+    }
+
+    // MARK: - Help
+
+    /// Answers the question the current step actually raises, in place, rather
+    /// than sending the user to a document they will not read.
+    @objc private func showHelp() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        switch step {
+        case .welcome:
+            alert.messageText = "What LecRec does"
+            alert.informativeText = """
+            1. You press record when class starts, and stop when it ends.
+            2. LecRec cleans the recording, then transcribes it on this Mac. No audio \
+            is uploaded anywhere.
+            3. Claude Code reads the transcript, cross-checks it against your slide \
+            deck if you attached one, and writes a structured note.
+            4. The note is saved to your Documents folder, then published to Notion.
+
+            The audio file and a local copy of the note are always written before \
+            anything is published, so a failed publish never costs you the lecture.
+            """
+        case .dependencies:
+            alert.messageText = "About these requirements"
+            alert.informativeText = """
+            ffmpeg and parakeet-mlx are free and run on your Mac. Press Install and \
+            LecRec runs the command for you. The first transcription downloads about \
+            2.3 GB of model, once.
+
+            Claude Code needs a paid Claude plan, from 20 dollars a month, because it \
+            is what writes the note. LecRec cannot install or pay for it. Get it at \
+            claude.com/claude-code, sign in, then come back and press Re-check.
+
+            The Notion connection is added through Claude Code, not through LecRec, so \
+            your Notion login is never handled by this app. Press Install to add it, \
+            then run `claude` once in Terminal and approve the Notion sign in.
+            """
+        case .courses:
+            alert.messageText = "Finding your Notion database"
+            alert.informativeText = """
+            Easiest way: press "Find my databases" and pick yours from the list.
+
+            To do it by hand:
+            1. Open the database in Notion as a full page, not inside another page.
+            2. Click the ... menu at the top right, then Copy link.
+            3. Paste it into the box. The whole URL is fine.
+
+            The id is the long string of letters and numbers between the last slash \
+            and the ?v= in that URL. The ?v= part is a saved view, not the database, \
+            so do not trim the URL yourself; LecRec works it out.
+
+            If you would rather start fresh, untick the box and LecRec creates a \
+            Course Notes database for you.
+            """
+        case .finish:
+            alert.messageText = "Using LecRec"
+            alert.informativeText = """
+            LecRec lives in your menu bar, the waveform icon. Click it, pick the \
+            course, optionally type the topic, and press record.
+
+            While recording, the level meter tells you sound is actually arriving. If \
+            it sits flat for 20 seconds LecRec warns you, because a wrong input device \
+            is the one mistake you cannot fix afterwards.
+
+            Recordings, transcripts and notes all land in \
+            ~/Documents/course-notes/<course>/
+            """
+        }
+        alert.addButton(withTitle: "Got it")
+        if step == .courses {
+            alert.addButton(withTitle: "Open Notion")
+        }
+        if let window, alert.runModal() == .alertSecondButtonReturn, step == .courses {
+            _ = window
+            NSWorkspace.shared.open(URL(string: "https://www.notion.so")!)
+        }
     }
 
     // MARK: - Actions
@@ -271,7 +445,9 @@ final class OnboardingWindowController: NSWindowController {
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
             guard !names.isEmpty else {
-                logLabel.stringValue = "Add at least one course."
+                showError("Type at least one course above, for example NLP CS 6120.")
+                if let scroll = coursesScroll { Validation.flag(scroll) }
+                window?.makeFirstResponder(courseTextView)
                 return
             }
             settings.courses = names.map { Course(name: $0) }
@@ -290,7 +466,8 @@ final class OnboardingWindowController: NSWindowController {
                 ? existingField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
                 : nil
             if isReusingDatabase, existing?.isEmpty != false {
-                logLabel.stringValue = "Paste the database URL first, or untick the box to create a new one."
+                showError("Pick a database above, or untick the box to create a new one.")
+                Validation.flag(existingField)
                 primaryButton.isEnabled = true
                 primaryButton.title = primaryTitleForCourses()
                 return
@@ -320,6 +497,14 @@ final class OnboardingWindowController: NSWindowController {
             onFinish?(settings)
             window?.close()
         }
+    }
+}
+
+extension OnboardingWindowController: NSTextViewDelegate {
+    func textDidChange(_ notification: Notification) {
+        guard (courseTextView?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        else { return }
+        clearError()
     }
 }
 

@@ -12,6 +12,17 @@ enum NotionSetup {
         var parentPageId: String?
     }
 
+    /// One candidate database the user could publish into.
+    struct Candidate: Decodable, Hashable {
+        var title: String
+        var dataSourceId: String
+        var url: String?
+    }
+
+    private struct CandidateList: Decodable {
+        var databases: [Candidate]
+    }
+
     struct SetupFailed: LocalizedError {
         let detail: String
         var errorDescription: String? { "Could not set up your Notion database: \(detail)" }
@@ -50,7 +61,12 @@ enum NotionSetup {
         "required":["dataSourceId","pageUrl"]}
         """
 
-        let trimmedExisting = existing?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A pasted Notion link often arrives with a trailing newline, and a
+        // double paste arrives as two lines. Take the first non-empty line only.
+        let trimmedExisting = existing?
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
         let prompt: String
         if let target = trimmedExisting, !target.isEmpty {
             prompt = """
@@ -111,6 +127,73 @@ enum NotionSetup {
         })
 
         return try parse(output)
+    }
+
+    /// Lists the databases in the user's workspace that look like notes databases,
+    /// so nobody has to go hunting for an id in a URL.
+    static func findDatabases(log: @escaping (String) -> Void) async throws -> [Candidate] {
+        let claude = try Shell.require("claude", hint: "install Claude Code")
+        let workDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lecrec-find-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: workDir) }
+
+        let mcpConfig = workDir.appendingPathComponent("mcp.json")
+        guard let notion = MCPRegistry.load()["notion"] else {
+            throw SetupFailed(detail: "the Notion server is not configured in Claude Code yet")
+        }
+        try JSONSerialization.data(withJSONObject: ["mcpServers": ["notion": notion]],
+                                   options: [.prettyPrinted]).write(to: mcpConfig)
+
+        let schema = """
+        {"type":"object","properties":{"databases":{"type":"array","items":{\
+        "type":"object","properties":{"title":{"type":"string"},\
+        "dataSourceId":{"type":"string"},"url":{"type":"string"}},\
+        "required":["title","dataSourceId"]}}},"required":["databases"]}
+        """
+
+        var output = ""
+        try await Shell.run(claude, [
+            "-p", """
+            List the databases in my Notion workspace that could hold lecture or course \
+            notes. Prefer ones whose name mentions notes, lectures, courses or classes, \
+            but include any database with a title property and a date property. Return at \
+            most 12, most recently edited first. Return only the JSON described by the \
+            schema. Do not create, rename or modify anything.
+            """,
+            "--permission-mode", "auto",
+            "--model", "sonnet",
+            "--output-format", "json",
+            "--json-schema", schema,
+            "--mcp-config", mcpConfig.path,
+            "--allowedTools", "mcp__notion__notion-search", "mcp__notion__notion-fetch",
+            "--disallowedTools", "WebFetch", "WebSearch", "Write", "Edit", "Bash", "Task",
+            "--append-system-prompt",
+            "You are running unattended during app setup. Never ask a question. Read only.",
+        ], cwd: workDir, log: { line in
+            log(line.count > 160 ? String(line.prefix(160)) + "..." : line)
+        }, onLine: { line in output += line + "\n" })
+
+        guard let data = output.data(using: .utf8),
+              let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { throw SetupFailed(detail: "could not read the database list") }
+        if envelope["is_error"] as? Bool == true {
+            throw SetupFailed(detail: envelope["result"] as? String ?? "unknown error")
+        }
+        guard let structured = envelope["result"] else {
+            throw SetupFailed(detail: "no databases came back")
+        }
+        let payload: Data?
+        if let dictionary = structured as? [String: Any] {
+            payload = try? JSONSerialization.data(withJSONObject: dictionary)
+        } else if let text = structured as? String {
+            payload = text.data(using: .utf8)
+        } else {
+            payload = nil
+        }
+        guard let payload, let list = try? JSONDecoder().decode(CandidateList.self, from: payload)
+        else { throw SetupFailed(detail: "the database list could not be read") }
+        return list.databases
     }
 
     private static func parse(_ output: String) throws -> Result {

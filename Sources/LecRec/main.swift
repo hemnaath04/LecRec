@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings = Settings.load()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppMenu.install()   // without this, Command V does nothing in any field
         Notifier.requestAuthorization()
 
         popoverController = PopoverController(settings: settings)

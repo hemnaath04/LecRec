@@ -18,8 +18,12 @@ before touching the network.
 
 ## Install
 
-Grab the DMG from Releases and follow [docs/INSTALL.md](docs/INSTALL.md). First
-launch walks you through the rest and installs what it safely can.
+Grab the DMG from Releases, then follow
+**[docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** which covers everything
+from the Gatekeeper prompt to your first recording.
+[docs/INSTALL.md](docs/INSTALL.md) is the short version.
+
+First launch walks you through setup and installs what it safely can.
 
 Needs an Apple Silicon Mac, and a paid Claude plan for the note writing. Recording
 and transcription are free and run entirely on your machine.
