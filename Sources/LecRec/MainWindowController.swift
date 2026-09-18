@@ -36,7 +36,8 @@ final class MainWindowController: NSWindowController {
         window.title = "LecRec"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = Theme.Palette.canvas
+        window.backgroundColor = .clear
+        window.isOpaque = false
         window.appearance = NSAppearance(named: .darkAqua)
         window.minSize = NSSize(width: 900, height: 560)
         window.center()
@@ -55,7 +56,23 @@ final class MainWindowController: NSWindowController {
     // MARK: - Layout
 
     private func buildLayout() {
+        // The window is translucent: vibrancy takes the desktop behind it, and the
+        // canvas view paints only the tint and bloom on top.
+        let vibrancy = NSVisualEffectView()
+        vibrancy.material = .underWindowBackground
+        vibrancy.blendingMode = .behindWindow
+        vibrancy.state = .followsWindowActiveState
+        vibrancy.translatesAutoresizingMaskIntoConstraints = false
+
         let container = CanvasBackgroundView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        vibrancy.addSubview(container)
+        NSLayoutConstraint.activate([
+            container.topAnchor.constraint(equalTo: vibrancy.topAnchor),
+            container.bottomAnchor.constraint(equalTo: vibrancy.bottomAnchor),
+            container.leadingAnchor.constraint(equalTo: vibrancy.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: vibrancy.trailingAnchor),
+        ])
 
         let sidebarHost = SidebarBackgroundView()
         sidebarHost.translatesAutoresizingMaskIntoConstraints = false
@@ -117,7 +134,7 @@ final class MainWindowController: NSWindowController {
             scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             flipped.widthAnchor.constraint(equalTo: scroll.widthAnchor),
         ])
-        window?.contentView = container
+        window?.contentView = vibrancy
     }
 
     private func buildHero() {
@@ -302,10 +319,21 @@ final class MainWindowController: NSWindowController {
     }
 
     private func addSidebarRow(title: String, count: Int, accent: NSColor?, slug: String?) {
-        let item = SidebarItem(title: title, count: count, accent: accent, selected: filter == slug)
+        let isSelected = filter == slug
+        let subtitle = count == 1 ? "1 lecture" : "\(count) lectures"
+        let item = SidebarItem(title: title, subtitle: subtitle, accent: accent,
+                               selected: isSelected,
+                               actionTitle: slug == nil ? nil : "RECORD +")
         item.onSelect = { [weak self] in
             self?.filter = slug
             self?.reload()
+        }
+        item.onAction = { [weak self] in
+            guard let self, let slug else { return }
+            self.settings.selectedCourseSlug = slug
+            self.settings.save()
+            self.rebuildCoursePopup()
+            self.startRecording()
         }
         sidebar.addArrangedSubview(item)
         item.widthAnchor.constraint(equalTo: sidebar.widthAnchor).isActive = true

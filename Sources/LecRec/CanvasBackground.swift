@@ -1,22 +1,22 @@
 import AppKit
 
-/// The window background. Flat black reads as an unfinished view rather than a
-/// designed surface, so this is a dark vertical gradient with one soft bloom in
-/// the accent colour and a light grain.
+/// A tint drawn over the window's vibrancy layer.
 ///
-/// The grain is not decoration: a gradient this dark and this wide bands visibly
-/// on an 8-bit display, and a little noise dithers it away.
+/// The window itself is translucent so the desktop shows through, which is what
+/// gives the panel its colour. This view only supplies the wash: a dark tint so
+/// text stays legible over any wallpaper, one warm bloom behind the hero, and
+/// grain to dither the gradient, which otherwise bands on an 8-bit display.
 final class CanvasBackgroundView: NSView {
+    override var isOpaque: Bool { false }
     private lazy var grain: NSImage = CanvasBackgroundView.makeGrain()
-
-    override var isOpaque: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
-        // Base: a cool near-black lifting very slightly toward the bottom.
-        let top = NSColor(srgbRed: 0.043, green: 0.043, blue: 0.051, alpha: 1)
-        let bottom = NSColor(srgbRed: 0.078, green: 0.078, blue: 0.094, alpha: 1)
+        // Translucent tint rather than a solid fill, so the desktop reads through
+        // while text keeps its contrast.
+        let top = NSColor(srgbRed: 0.055, green: 0.055, blue: 0.065, alpha: 0.80)
+        let bottom = NSColor(srgbRed: 0.078, green: 0.078, blue: 0.094, alpha: 0.88)
         if let gradient = NSGradient(starting: top, ending: bottom) {
             gradient.draw(in: bounds, angle: -90)
         }
@@ -85,16 +85,15 @@ final class CanvasBackgroundView: NSView {
 }
 
 /// The sidebar sits slightly above the canvas rather than being a flat panel.
+/// The sidebar is part of the same translucent panel, marked only by a slightly
+/// deeper tint and a hairline, rather than being an opaque slab beside it.
 final class SidebarBackgroundView: NSView {
-    override var isOpaque: Bool { true }
+    override var isOpaque: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
-        let top = NSColor(srgbRed: 0.071, green: 0.071, blue: 0.082, alpha: 1)
-        let bottom = NSColor(srgbRed: 0.055, green: 0.055, blue: 0.065, alpha: 1)
-        if let gradient = NSGradient(starting: top, ending: bottom) {
-            gradient.draw(in: bounds, angle: -90)
-        }
-        Theme.Palette.hairline.setFill()
+        NSColor.black.withAlphaComponent(0.16).setFill()
+        bounds.fill()
+        NSColor.white.withAlphaComponent(0.07).setFill()
         NSRect(x: bounds.maxX - 1, y: 0, width: 1, height: bounds.height).fill()
     }
 }

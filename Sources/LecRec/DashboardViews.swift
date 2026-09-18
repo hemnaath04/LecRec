@@ -121,64 +121,111 @@ final class LectureRow: NSView {
     }
 }
 
-/// A sidebar entry: optional accent dot, label, and a count on the right.
+/// A sidebar entry in the reference language: a title with a quiet subtitle,
+/// and when selected it inverts to a white pill with dark text and reveals its
+/// action. The inversion is what makes the current selection unmissable without
+/// adding another colour to the palette.
 final class SidebarItem: NSView {
-    private let button = NSButton()
-    private let countLabel = Theme.label("", font: Theme.Font.caption, color: Theme.Palette.faint)
-    private let marker = NSView()
-    private var accent: NSColor?
+    private let titleLabel: NSTextField
+    private let subtitleLabel: NSTextField
+    private let actionLabel: NSTextField
+    private let dotView: NSView?
+    private let pill = NSView()
+    private var selected: Bool
+    private var trackingArea: NSTrackingArea?
 
     var onSelect: (() -> Void)?
+    var onAction: (() -> Void)?
 
-    init(title: String, count: Int, accent: NSColor?, selected: Bool) {
-        self.accent = accent
+    init(title: String, subtitle: String, accent: NSColor?, selected isSelected: Bool,
+         actionTitle: String? = nil) {
+        selected = isSelected
+        titleLabel = Theme.label(title, font: .systemFont(ofSize: 13.5, weight: .semibold))
+        subtitleLabel = Theme.label(subtitle, font: Theme.Font.rowMeta)
+        actionLabel = Theme.label(actionTitle ?? "", font: .systemFont(ofSize: 10, weight: .semibold),
+                                  tracking: 0.9)
+        dotView = accent.map { Theme.dot($0, size: 7) }
         super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = selected ? Theme.Palette.surface.cgColor : NSColor.clear.cgColor
 
-        marker.wantsLayer = true
-        marker.layer?.backgroundColor = Theme.Palette.record.cgColor
-        marker.isHidden = !selected
-        marker.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(marker)
+        pill.wantsLayer = true
+        pill.layer?.cornerCurve = .continuous
+        pill.layer?.cornerRadius = 11
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(pill)
 
-        button.title = title
-        button.font = selected
-            ? NSFont.systemFont(ofSize: 12.5, weight: .medium) : Theme.Font.sidebarItem
-        button.contentTintColor = selected ? Theme.Palette.ink : Theme.Palette.inkSoft
-        button.bezelStyle = .accessoryBarAction
-        button.isBordered = false
-        button.alignment = .left
-        button.target = self
-        button.action = #selector(tapped)
-
-        countLabel.stringValue = count > 0 ? "\(count)" : ""
-        countLabel.alignment = .right
+        let text = NSStackView(views: subtitle.isEmpty ? [titleLabel] : [titleLabel, subtitleLabel])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 1
 
         var views: [NSView] = []
-        if let accent { views.append(Theme.dot(accent)) }
-        views += [button, NSView(), countLabel]
+        if let dotView { views.append(dotView) }
+        views += [text, NSView(), actionLabel]
 
         let row = NSStackView(views: views)
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = accent == nil ? 0 : 9
+        row.spacing = dotView == nil ? 0 : 10
         row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
+        pill.addSubview(row)
 
         NSLayoutConstraint.activate([
-            marker.leadingAnchor.constraint(equalTo: leadingAnchor),
-            marker.topAnchor.constraint(equalTo: topAnchor),
-            marker.bottomAnchor.constraint(equalTo: bottomAnchor),
-            marker.widthAnchor.constraint(equalToConstant: 2),
-            row.topAnchor.constraint(equalTo: topAnchor, constant: 7),
-            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
-            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
-            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
+            pill.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            pill.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
+            pill.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            pill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            row.topAnchor.constraint(equalTo: pill.topAnchor, constant: 9),
+            row.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -9),
+            row.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 13),
+            row.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -13),
         ])
+        applyAppearance(hovering: false)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    @objc private func tapped() { onSelect?() }
+    private func applyAppearance(hovering: Bool) {
+        if selected {
+            pill.layer?.backgroundColor = NSColor.white.cgColor
+            titleLabel.textColor = NSColor(srgbRed: 0.09, green: 0.09, blue: 0.11, alpha: 1)
+            subtitleLabel.textColor = NSColor(srgbRed: 0.09, green: 0.09, blue: 0.11, alpha: 0.55)
+            actionLabel.textColor = NSColor(srgbRed: 0.09, green: 0.09, blue: 0.11, alpha: 0.5)
+            actionLabel.isHidden = actionLabel.stringValue.isEmpty
+        } else {
+            pill.layer?.backgroundColor = hovering
+                ? NSColor.white.withAlphaComponent(0.07).cgColor
+                : NSColor.clear.cgColor
+            titleLabel.textColor = Theme.Palette.ink
+            subtitleLabel.textColor = Theme.Palette.faint
+            actionLabel.isHidden = true
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeInKeyWindow],
+                                  owner: self)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { applyAppearance(hovering: true) }
+    override func mouseExited(with event: NSEvent) { applyAppearance(hovering: false) }
+
+    override func mouseDown(with event: NSEvent) {
+        // The revealed action sits on the right of a selected pill.
+        if selected, !actionLabel.isHidden {
+            let point = convert(event.locationInWindow, from: nil)
+            if actionLabel.frame.insetBy(dx: -8, dy: -8).contains(convert(point, to: pill)) {
+                onAction?()
+                return
+            }
+        }
+        onSelect?()
+    }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func accessibilityLabel() -> String? { titleLabel.stringValue }
 }

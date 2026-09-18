@@ -102,6 +102,46 @@ struct Settings: Codable {
         return true
     }
 
+    // MARK: - Decoding
+    //
+    // Synthesised Codable throws when a key is absent, even for a property with a
+    // default, so shipping any new setting would have made every existing install
+    // fall back to an empty Settings and rerun onboarding. Every field is decoded
+    // permissively instead, which is what makes updates safe.
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            (try? box.decodeIfPresent(T.self, forKey: key)) .flatMap { $0 } ?? fallback
+        }
+        let defaults = Settings()
+        courses = value(.courses, defaults.courses)
+        selectedCourseSlug = value(.selectedCourseSlug, defaults.selectedCourseSlug)
+        inputDeviceUID = value(.inputDeviceUID, defaults.inputDeviceUID)
+        destination = value(.destination, defaults.destination)
+        obsidianVaultPath = value(.obsidianVaultPath, defaults.obsidianVaultPath)
+        appleNotesFolder = value(.appleNotesFolder, defaults.appleNotesFolder)
+        notesRoot = value(.notesRoot, defaults.notesRoot)
+        claudeModel = value(.claudeModel, defaults.claudeModel)
+        denoise = value(.denoise, defaults.denoise)
+        transcriptionModel = value(.transcriptionModel, defaults.transcriptionModel)
+        autoRunPipelineOnStop = value(.autoRunPipelineOnStop, defaults.autoRunPipelineOnStop)
+        linkPreviousLectures = value(.linkPreviousLectures, defaults.linkPreviousLectures)
+        continuityLookback = value(.continuityLookback, defaults.continuityLookback)
+        closeResolvedGaps = value(.closeResolvedGaps, defaults.closeResolvedGaps)
+        notionDataSourceID = value(.notionDataSourceID, defaults.notionDataSourceID)
+        notionParentPageID = value(.notionParentPageID, defaults.notionParentPageID)
+        notionDatabaseURL = value(.notionDatabaseURL, defaults.notionDatabaseURL)
+        hasCompletedOnboarding = value(.hasCompletedOnboarding, defaults.hasCompletedOnboarding)
+
+        // A model the machine cannot run is worse than no preference at all.
+        if !TranscriptionModel.available.contains(transcriptionModel) {
+            transcriptionModel = .recommended
+        }
+    }
+
     // MARK: - Persistence
 
     static var fileURL: URL {
