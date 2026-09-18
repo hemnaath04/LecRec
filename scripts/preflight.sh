@@ -1,5 +1,5 @@
 #!/bin/bash
-# Checks every external dependency Lectern shells out to.
+# Checks every external dependency LecRec shells out to.
 cd "$(dirname "$0")/.."
 status=0
 

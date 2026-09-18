@@ -1,16 +1,16 @@
 import Foundation
 
-/// Appends to ~/Library/Logs/Lectern.log. A menu bar app has no console, so this
+/// Appends to ~/Library/Logs/LecRec.log. A menu bar app has no console, so this
 /// is the only way to see what happened during a lecture.
 enum Diagnostics {
     private static let url: URL = {
         let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("Lectern.log")
+        return dir.appendingPathComponent("LecRec.log")
     }()
 
-    private static let queue = DispatchQueue(label: "tech.hemnaath.lectern.log")
+    private static let queue = DispatchQueue(label: "tech.hemnaath.lecrec.log")
 
     static func log(_ message: String) {
         let stamp = ISO8601DateFormatter().string(from: Date())

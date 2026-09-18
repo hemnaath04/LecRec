@@ -7,10 +7,25 @@ struct Course: Codable, Hashable, Identifiable {
     var name: String        // "NLP CS 6120"
     var notionCourse: String // must match a Notion select option: "NLP"
 
-    static let defaults: [Course] = [
-        Course(slug: "NLP", name: "NLP CS 6120", notionCourse: "NLP"),
-        Course(slug: "IR", name: "IR CS 6200", notionCourse: "Information Retrieval"),
-    ]
+    /// Empty on a fresh install. Onboarding asks for the user's own courses.
+    static let defaults: [Course] = []
+
+    /// Builds a course from whatever the user typed, deriving a safe folder slug.
+    init(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.name = trimmed
+        self.notionCourse = trimmed
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -"))
+        let cleaned = String(trimmed.unicodeScalars.filter { allowed.contains($0) })
+        let parts = cleaned.split(whereSeparator: { $0 == " " || $0 == "-" })
+        self.slug = parts.isEmpty ? "course" : parts.joined(separator: "-")
+    }
+
+    init(slug: String, name: String, notionCourse: String) {
+        self.slug = slug
+        self.name = name
+        self.notionCourse = notionCourse
+    }
 }
 
 enum Destination: String, Codable, CaseIterable {
@@ -42,7 +57,7 @@ enum Destination: String, Codable, CaseIterable {
 
 struct Settings: Codable {
     var courses: [Course] = Course.defaults
-    var selectedCourseSlug: String = "NLP"
+    var selectedCourseSlug: String = ""
     var inputDeviceUID: String? = nil      // nil means system default input
     var destination: Destination = .notion
     var obsidianVaultPath: String = ""
@@ -61,15 +76,36 @@ struct Settings: Codable {
     /// answered. Off by default because it writes to already-published pages.
     var closeResolvedGaps: Bool = false
 
-    var selectedCourse: Course {
-        courses.first { $0.slug == selectedCourseSlug } ?? courses[0]
+    // MARK: - Per install identity
+    //
+    // These are discovered during onboarding, never hardcoded. The whole reason
+    // this app could not be shared before is that the notes database belonged to
+    // one person.
+
+    /// Notion data source that receives lecture notes, for this user's workspace.
+    var notionDataSourceID: String = ""
+    /// Page the database lives under, kept for the onboarding summary.
+    var notionParentPageID: String = ""
+    var notionDatabaseURL: String = ""
+    var hasCompletedOnboarding: Bool = false
+
+    var selectedCourse: Course? {
+        courses.first { $0.slug == selectedCourseSlug } ?? courses.first
+    }
+
+    /// Onboarding is done when the app has everything it needs to run unattended.
+    var isReadyToRecord: Bool {
+        guard !courses.isEmpty else { return false }
+        if destination == .notion { return !notionDataSourceID.isEmpty }
+        if destination == .obsidian { return !obsidianVaultPath.isEmpty }
+        return true
     }
 
     // MARK: - Persistence
 
     static var fileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Lectern", isDirectory: true)
+            .appendingPathComponent("LecRec", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("settings.json")
     }

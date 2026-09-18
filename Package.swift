@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "Lectern",
+    name: "LecRec",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "Lectern",
-            path: "Sources/Lectern",
+            name: "LecRec",
+            path: "Sources/LecRec",
             swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]

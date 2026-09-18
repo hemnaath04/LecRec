@@ -18,7 +18,7 @@ enum Prompt {
               """
 
         return """
-        You are running unattended inside Lectern, a lecture-notes app. There is no \
+        You are running unattended inside LecRec, a lecture-notes app. There is no \
         human watching this session, so never ask a question, never offer options, and \
         never wait for confirmation. Decide and act.
 
@@ -57,12 +57,13 @@ enum Prompt {
             : "- Write the local Markdown to: \(noteURL.path)"
 
         return """
-        Process one lecture into a finished note. Use the course-notes skill; it owns the \
-        note structure, the Notion database IDs and the source precedence. Do not \
-        re-derive any of that.
+        Process one lecture into a finished note. Use the \(SkillInstaller.skillName) \
+        skill; it owns the note structure and the source precedence. Do not re-derive \
+        any of that.
 
         Lecture:
         - Course: \(lecture.course.name), Notion Course property value "\(lecture.course.notionCourse)"
+        \(destinationIdentifiers(settings: settings))
         - Date: \(lecture.dateStamp)
         - Timestamped transcript (SRT, from parakeet-mlx on device): \(transcript.path)
         \(deckLine)
@@ -81,6 +82,16 @@ enum Prompt {
         \(publishStep(settings: settings))
         \(reportStep(settings: settings))
         """
+    }
+
+    /// The skill deliberately holds no workspace IDs, so the app supplies them.
+    private static func destinationIdentifiers(settings: Settings) -> String {
+        guard settings.destination == .notion else { return "" }
+        guard !settings.notionDataSourceID.isEmpty else {
+            return "- Notion data source: NOT CONFIGURED. Write the local Markdown and "
+                + "record this as a gap; do not attempt to publish."
+        }
+        return "- Notion data source id to publish into: \(settings.notionDataSourceID)"
     }
 
     // MARK: - Steps
@@ -138,8 +149,8 @@ enum Prompt {
             return "3. Publishing is disabled; the local Markdown file is the final output. Do not call any MCP tool."
         case .notion:
             return """
-            3. Publish to Notion with the notion MCP tools, following the course-notes \
-            skill's publish steps exactly, including re-inserting the stripped H1 and \
+            3. Publish to Notion with the notion MCP tools, into the data source id \
+            given above, following the skill's publish steps exactly, including re-inserting the stripped H1 and \
             appending the body in chunks. If a page already exists for this course and \
             date, revise that page in place rather than creating a second one.
             """

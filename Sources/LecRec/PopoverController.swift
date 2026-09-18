@@ -28,7 +28,7 @@ final class PopoverController: NSViewController {
     private var meterRow: NSStackView!
     private var permissionCard: NSView?
     private let permissionLabel = Theme.label(
-        "Microphone access is off, so Lectern cannot record.",
+        "Microphone access is off, so LecRec cannot record.",
         font: Theme.Font.caption, color: .labelColor, lines: 2)
 
     private var phase: Phase = .ready
@@ -121,10 +121,10 @@ final class PopoverController: NSViewController {
     }
 
     private func buildHeader() -> NSStackView {
-        let title = Theme.label("Lectern", font: Theme.Font.title)
+        let title = Theme.label("LecRec", font: Theme.Font.title)
         let settingsButton = Theme.iconButton(symbol: "gearshape", tooltip: "Settings",
                                               target: self, action: #selector(openSettings))
-        let quitButton = Theme.iconButton(symbol: "power", tooltip: "Quit Lectern",
+        let quitButton = Theme.iconButton(symbol: "power", tooltip: "Quit LecRec",
                                           target: NSApp, action: #selector(NSApplication.terminate(_:)))
         let header = NSStackView(views: [title, NSView(), settingsButton, quitButton])
         header.orientation = .horizontal
@@ -246,7 +246,7 @@ final class PopoverController: NSViewController {
         permissionCard?.isHidden = !blocked
         permissionLabel.stringValue = status == .restricted
             ? "Microphone access is blocked by a policy on this Mac."
-            : "Microphone access is off, so Lectern cannot record."
+            : "Microphone access is off, so LecRec cannot record."
     }
 
     private func refreshMeta() {
@@ -324,7 +324,12 @@ final class PopoverController: NSViewController {
                 return
             }
 
-            let course = self.settings.selectedCourse
+            guard let course = self.settings.selectedCourse else {
+                self.hintLabel.stringValue = "Add a course in Settings before recording."
+                self.hintLabel.textColor = .systemOrange
+                self.onOpenSettings?()
+                return
+            }
             let url = URL(fileURLWithPath: self.settings.notesRoot)
                 .appendingPathComponent(course.slug, isDirectory: true)
                 .appendingPathComponent("audio/\(Self.stamp())-raw.caf")
@@ -359,8 +364,9 @@ final class PopoverController: NSViewController {
         hintLabel.stringValue = "This runs on your Mac and takes a few minutes. You can close this window."
         hintLabel.textColor = .secondaryLabelColor
 
+        guard let course = settings.selectedCourse else { return }
         let lecture = Lecture(
-            course: settings.selectedCourse,
+            course: course,
             date: Date(),
             slug: Self.slugify(topicField.stringValue),
             audioURL: finished.url,
@@ -386,7 +392,7 @@ final class PopoverController: NSViewController {
                 self.hintLabel.stringValue = "\(note.lastPathComponent) is ready."
                 self.hintLabel.textColor = .secondaryLabelColor
                 Notifier.post(title: "Lecture note ready",
-                              body: "\(lecture.course.name), \(Self.clock(finished.duration)) recorded.")
+                              body: "\(course.name), \(Self.clock(finished.duration)) recorded.")
             } catch {
                 self.stages.markFailure(at: self.currentStage, message: error.localizedDescription)
                 self.apply(phase: .failed)

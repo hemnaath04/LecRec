@@ -134,7 +134,7 @@ final class ClaudeRunner {
         }
         let payload = ["mcpServers": servers]
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
-        let url = directory.appendingPathComponent(".lectern-mcp.json")
+        let url = directory.appendingPathComponent(".lecrec-mcp.json")
         try data.write(to: url, options: .atomic)
         return url
     }

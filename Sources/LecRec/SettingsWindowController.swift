@@ -25,7 +25,7 @@ final class SettingsWindowController: NSWindowController {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 470, height: 520),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Lectern Settings"
+        window.title = "LecRec Settings"
         window.center()
         super.init(window: window)
         buildUI()

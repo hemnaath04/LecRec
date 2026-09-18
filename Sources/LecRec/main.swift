@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let popover = NSPopover()
     private var popoverController: PopoverController!
     private var settingsController: SettingsWindowController?
+    private var onboardingController: OnboardingWindowController?
     private var settings = Settings.load()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -23,13 +24,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
         updateIcon(recording: false)
+
+        // A first run with nothing configured would otherwise fail at the first
+        // press, so setup happens before the user can get that far.
+        if !settings.hasCompletedOnboarding || !settings.isReadyToRecord {
+            showOnboarding()
+        } else if !SkillInstaller.isInstalled {
+            // A fresh build ships an updated skill; keep the installed copy current.
+            try? SkillInstaller.install()
+        }
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     private func updateIcon(recording: Bool) {
         let name = recording ? "record.circle.fill" : "waveform"
-        let description = recording ? "Lectern, recording" : "Lectern"
+        let description = recording ? "LecRec, recording" : "LecRec"
         let image = NSImage(systemSymbolName: name, accessibilityDescription: description)
         image?.isTemplate = !recording
         statusItem.button?.image = image
@@ -53,6 +63,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
             Diagnostics.log("popover shown=\(popover.isShown)")
         }
+    }
+
+    private func showOnboarding() {
+        let controller = OnboardingWindowController(settings: settings)
+        controller.onFinish = { [weak self] updated in
+            self?.settings = updated
+            self?.popoverController.reload(settings: updated)
+        }
+        onboardingController = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func showSettings() {

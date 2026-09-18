@@ -3,25 +3,27 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Lectern</string>
+    <string>LecRec</string>
     <key>CFBundleDisplayName</key>
-    <string>Lectern</string>
+    <string>LecRec</string>
     <key>CFBundleIdentifier</key>
-    <string>tech.hemnaath.lectern</string>
+    <string>tech.hemnaath.lecrec</string>
     <key>CFBundleExecutable</key>
-    <string>Lectern</string>
+    <string>LecRec</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>0.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Lectern records your lectures so it can transcribe them on this Mac.</string>
+    <string>LecRec records your lectures so it can transcribe them on this Mac.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

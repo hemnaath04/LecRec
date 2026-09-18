@@ -1,4 +1,4 @@
-# Lectern
+# LecRec
 
 A macOS menu bar app that turns one button press into a finished lecture note.
 
@@ -13,18 +13,30 @@ Stop   →  ffmpeg denoise  →  parakeet-mlx (on device)  →  coverage check
 
 The pipeline it replaces lost a third of a lecture: a live dictation transcript
 was the only artifact, so when the capture started late there was nothing to
-re-run. Lectern always writes an audio file and always writes local Markdown
+re-run. LecRec always writes an audio file and always writes local Markdown
 before touching the network.
 
-## Build
+## Install
+
+Grab the DMG from Releases and follow [docs/INSTALL.md](docs/INSTALL.md). First
+launch walks you through the rest and installs what it safely can.
+
+Needs an Apple Silicon Mac, and a paid Claude plan for the note writing. Recording
+and transcription are free and run entirely on your machine.
+
+## Build from source
 
 No Xcode required, Command Line Tools is enough.
 
 ```bash
-./scripts/preflight.sh      # names any missing dependency and how to install it
-./scripts/build.sh release  # produces build/Lectern.app
-open build/Lectern.app
+./scripts/preflight.sh       # names any missing dependency and how to install it
+./scripts/build.sh release   # produces build/LecRec.app
+./scripts/package.sh         # produces build/LecRec-<version>.dmg
+open build/LecRec.app
 ```
+
+Set `DEVELOPER_ID` (and optionally `NOTARY_PROFILE`) before `package.sh` to sign
+and notarize instead of shipping an ad-hoc signature.
 
 ## Containment
 
@@ -43,7 +55,10 @@ Notion auth is inherited from Claude Code's existing OAuth. The app implements n
 credentials of its own, and any MCP-based destination added to Claude Code later
 becomes available here without code changes.
 
+Every install gets its own Notion database, created or adopted during onboarding.
+Nothing about the notes destination is hardcoded to one workspace.
+
 ## Logs
 
-`~/Library/Logs/Lectern.log`. A menu bar app has no console, and this is the only
+`~/Library/Logs/LecRec.log`. A menu bar app has no console, and this is the only
 record of what happened during a lecture.
