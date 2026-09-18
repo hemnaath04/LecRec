@@ -149,42 +149,32 @@ final class OnboardingWindowController: NSWindowController {
         case .courses:
             titleLabel.stringValue = "Your courses"
             bodyLabel.stringValue = """
-            Type your courses one per line, however you want them to appear in Notion. \
-            For example: NLP CS 6120
+            Type your courses separated by commas. They appear in Notion exactly as you \
+            type them.
 
-            Then choose where the notes go. Press "Find my databases" to pick an \
-            existing one, or leave the box unticked and LecRec creates a Course Notes \
-            database for you.
+            Then choose where the notes go. Press "Find my databases" to pick an existing \
+            one, or leave the box unticked and LecRec creates a Course Notes database for \
+            you.
             """
-            coursesField.placeholderString = "NLP CS 6120"
-            let field = NSTextField(wrappingLabelWithString: "")
-            field.isHidden = true
-            let textView = PlaceholderTextView(frame: NSRect(x: 0, y: 0, width: 440, height: 110))
-            textView.font = Theme.Font.body
-            textView.string = settings.courses.map(\.name).joined(separator: "\n")
-            textView.placeholder = "NLP CS 6120\nIR CS 6200"
-            textView.delegate = self
-            textView.isRichText = false
-            textView.isAutomaticQuoteSubstitutionEnabled = false
-            textView.isAutomaticDashSubstitutionEnabled = false
-            // Otherwise macOS floats a Writing Tools bubble over the field's edge.
-            if #available(macOS 15.0, *) { textView.writingToolsBehavior = .none }
-            let scroll = NSScrollView()
-            scroll.documentView = textView
-            scroll.hasVerticalScroller = true
-            scroll.borderType = .bezelBorder
-            scroll.translatesAutoresizingMaskIntoConstraints = false
-            scroll.heightAnchor.constraint(equalToConstant: 110).isActive = true
-            content.addArrangedSubview(scroll)
-            scroll.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-            courseTextView = textView
-            coursesScroll = scroll
+
+            // NSTokenField rather than a text view in a scroll view: it is the native
+            // control for a list of short strings, and it handles typing, paste and
+            // editing without any of the manual text-container setup a bare
+            // NSTextView needs to accept input reliably.
+            courseField.placeholderString = "NLP CS 6120, IR CS 6200"
+            courseField.tokenizingCharacterSet = CharacterSet(charactersIn: ",")
+            courseField.objectValue = settings.courses.map(\.name)
+            courseField.delegate = self
+            courseField.font = Theme.Font.body
+            content.addArrangedSubview(courseField)
+            courseField.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
 
             if settings.destination == .notion {
                 reuseCheckbox.title = "I already have a Notion database for these notes"
                 reuseCheckbox.target = self
                 reuseCheckbox.action = #selector(reuseToggled)
                 reuseCheckbox.state = settings.notionDatabaseURL.isEmpty ? .off : .on
+                reuseCheckbox.toolTip = "Leave this off and LecRec creates a database for you."
                 existingField.placeholderString = "or paste the database URL or its id"
                 existingField.stringValue = settings.notionDatabaseURL
 
@@ -214,6 +204,10 @@ final class OnboardingWindowController: NSWindowController {
             }
             primaryButton.title = primaryTitleForCourses()
             secondaryButton.title = "Back"
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.window?.makeFirstResponder(self.courseField)
+            }
 
         case .finish:
             titleLabel.stringValue = "You are set up"
@@ -233,13 +227,13 @@ final class OnboardingWindowController: NSWindowController {
         }
     }
 
-    private var courseTextView: PlaceholderTextView?
-    private weak var coursesScroll: NSScrollView?
+    private let courseField = NSTokenField()
     private let reuseCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let existingField = NSTextField(string: "")
     private let databasePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let findButton = NSButton()
     private var candidates: [NotionSetup.Candidate] = []
+    private var lookupToken = UUID()
 
     private var isReusingDatabase: Bool {
         settings.destination == .notion && reuseCheckbox.state == .on
@@ -265,7 +259,17 @@ final class OnboardingWindowController: NSWindowController {
     @objc private func findDatabases() {
         findButton.isEnabled = false
         findButton.title = "Looking\u{2026}"
-        logLabel.stringValue = "Asking Notion which databases you have."
+        logLabel.stringValue = "Asking Notion which databases you have, this takes a few seconds."
+        lookupToken = UUID()
+        let token = lookupToken
+        // Claude plus a Notion round trip is usually under 30s, but the button must
+        // never be left disabled if it is not.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
+            guard let self, self.lookupToken == token, !self.findButton.isEnabled else { return }
+            self.findButton.isEnabled = true
+            self.findButton.title = "Find my databases"
+            self.showError("Notion did not answer in time. Paste the database link instead.")
+        }
         Task { @MainActor in
             do {
                 self.candidates = try await NotionSetup.findDatabases { line in
@@ -305,6 +309,20 @@ final class OnboardingWindowController: NSWindowController {
         primaryButton.title = missing.isEmpty ? "Continue" : "Install what is missing first"
     }
 
+    /// Includes whatever is still being typed, so a user who never presses return
+    /// does not lose the course they just entered.
+    private func currentCourseNames() -> [String] {
+        var names = (courseField.objectValue as? [String]) ?? []
+        let pending = courseField.stringValue
+            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        for candidate in pending where !names.contains(candidate) { names.append(candidate) }
+        return names
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
     private func showError(_ message: String) {
         logLabel.stringValue = message
         logLabel.font = Theme.Font.captionStrong
@@ -315,7 +333,7 @@ final class OnboardingWindowController: NSWindowController {
         logLabel.stringValue = ""
         logLabel.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
         logLabel.textColor = .tertiaryLabelColor
-        if let scroll = coursesScroll { Validation.clear(scroll) }
+        Validation.clear(courseField)
         Validation.clear(existingField)
     }
 
@@ -440,14 +458,11 @@ final class OnboardingWindowController: NSWindowController {
             advance(to: .courses)
 
         case .courses:
-            let names = (courseTextView?.string ?? "")
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
+            let names = currentCourseNames()
             guard !names.isEmpty else {
                 showError("Type at least one course above, for example NLP CS 6120.")
-                if let scroll = coursesScroll { Validation.flag(scroll) }
-                window?.makeFirstResponder(courseTextView)
+                Validation.flag(courseField)
+                window?.makeFirstResponder(courseField)
                 return
             }
             settings.courses = names.map { Course(name: $0) }
@@ -500,10 +515,9 @@ final class OnboardingWindowController: NSWindowController {
     }
 }
 
-extension OnboardingWindowController: NSTextViewDelegate {
-    func textDidChange(_ notification: Notification) {
-        guard (courseTextView?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        else { return }
+extension OnboardingWindowController: NSTokenFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard !currentCourseNames().isEmpty else { return }
         clearError()
     }
 }
