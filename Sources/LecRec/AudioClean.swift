@@ -29,23 +29,68 @@ enum AudioClean {
 }
 
 enum Transcriber {
-    /// `--output-template` names the file directly, so there is no rename step
-    /// and no chance of colliding with a previous run's output.
-    static func run(input: URL, outputSRT: URL, log: ((String) -> Void)?) async throws {
-        let parakeet = try Shell.require(
-            "parakeet-mlx", hint: "uv tool install parakeet-mlx -U")
-        let stem = outputSRT.deletingPathExtension().lastPathComponent
-        try await Shell.run(parakeet, [
+    /// Routes to Parakeet or whisper.cpp. Both are told to write the same SRT
+    /// path so nothing downstream has to know which engine ran.
+    static func run(input: URL, outputSRT: URL, model: TranscriptionModel,
+                    log: ((String) -> Void)?) async throws {
+        switch model {
+        case .parakeetV3:
+            try await runParakeet(input: input, outputSRT: outputSRT, log: log)
+        default:
+            try await runWhisper(input: input, outputSRT: outputSRT, model: model, log: log)
+        }
+        guard FileManager.default.fileExists(atPath: outputSRT.path) else {
+            throw Shell.Failed(tool: model.binaryName, code: 0,
+                               output: "expected \(outputSRT.lastPathComponent) but it was not written")
+        }
+    }
+
+    private static func runParakeet(input: URL, outputSRT: URL,
+                                    log: ((String) -> Void)?) async throws {
+        let binary = try Shell.require("parakeet-mlx",
+                                       hint: TranscriptionModel.parakeetV3.installHint)
+        try await Shell.run(binary, [
             input.path,
             "--output-format", "srt",
             "--output-dir", outputSRT.deletingLastPathComponent().path,
-            "--output-template", stem,
+            "--output-template", outputSRT.deletingPathExtension().lastPathComponent,
         ], log: log)
+    }
 
-        guard FileManager.default.fileExists(atPath: outputSRT.path) else {
-            throw Shell.Failed(tool: "parakeet-mlx", code: 0,
-                               output: "expected \(outputSRT.lastPathComponent) but it was not written")
+    /// whisper.cpp writes <output-file>.srt, so the prefix is passed without the
+    /// extension and the model file is fetched on first use.
+    private static func runWhisper(input: URL, outputSRT: URL, model: TranscriptionModel,
+                                   log: ((String) -> Void)?) async throws {
+        let binary = try Shell.require("whisper-cli", hint: model.installHint)
+        guard let name = model.whisperModelName else {
+            throw Shell.MissingTool(name: model.label, installHint: model.installHint)
         }
+        let modelFile = try await whisperModelFile(named: name, log: log)
+        let prefix = outputSRT.deletingPathExtension().path
+        try await Shell.run(binary, [
+            "-m", modelFile.path,
+            "-f", input.path,
+            "--output-srt",
+            "--output-file", prefix,
+            "--print-progress",
+        ], log: log)
+    }
+
+    /// Models live beside the app's own data, not in the Homebrew prefix, so a
+    /// brew upgrade never deletes a 1.6 GB download.
+    private static func whisperModelFile(named name: String,
+                                         log: ((String) -> Void)?) async throws -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("LecRec/models", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let file = base.appendingPathComponent("ggml-\(name).bin")
+        if FileManager.default.fileExists(atPath: file.path) { return file }
+
+        log?("Downloading the \(name) model, this happens once.")
+        let curl = try Shell.require("curl", hint: "curl ships with macOS")
+        let url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-\(name).bin"
+        try await Shell.run(curl, ["-fL", "--retry", "2", "-o", file.path, url], log: log)
+        return file
     }
 }
 

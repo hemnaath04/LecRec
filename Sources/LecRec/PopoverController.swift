@@ -13,15 +13,15 @@ final class PopoverController: NSViewController {
     private let watchdog = SilenceWatchdog()
 
     // Controls
-    private let coursePopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let topicField = NSTextField(string: "")
+    private let courseChip = CourseChip(frame: .zero)
+    private let topicField = PaddedTextField(string: "")
     private let recordButton = RecordButton(frame: .zero)
     private let meter = LevelMeterView()
-    private let clockLabel = Theme.label("00:00", font: Theme.Font.clock, color: .labelColor)
-    private let hintLabel = Theme.label("", font: Theme.Font.caption, color: .secondaryLabelColor, lines: 2)
+    private let clockLabel = Theme.label("00:00", font: Theme.Font.clock, color: Theme.Palette.ink)
+    private let hintLabel = Theme.label("", font: Theme.Font.caption, color: Theme.Palette.muted, lines: 2)
     private let stages = StageListView(frame: .zero)
-    private let inputLabel = Theme.label("", font: Theme.Font.caption, color: .tertiaryLabelColor)
-    private let destinationLabel = Theme.label("", font: Theme.Font.caption, color: .tertiaryLabelColor)
+    private let inputLabel = Theme.label("", font: Theme.Font.caption, color: Theme.Palette.faint)
+    private let destinationLabel = Theme.label("", font: Theme.Font.caption, color: Theme.Palette.faint)
     private let openNoteButton = NSButton()
 
     // Grouped rows we show and hide by phase
@@ -29,7 +29,7 @@ final class PopoverController: NSViewController {
     private var permissionCard: NSView?
     private let permissionLabel = Theme.label(
         "Microphone access is off, so LecRec cannot record.",
-        font: Theme.Font.caption, color: .labelColor, lines: 2)
+        font: Theme.Font.caption, color: Theme.Palette.ink, lines: 2)
 
     private var phase: Phase = .ready
     private var lastNoteURL: URL?
@@ -58,10 +58,7 @@ final class PopoverController: NSViewController {
     // MARK: - Layout
 
     override func loadView() {
-        let background = NSVisualEffectView()
-        background.material = .popover
-        background.blendingMode = .behindWindow
-        background.state = .active
+        let background = PopoverBackgroundView()
 
         let header = buildHeader()
         buildControls()
@@ -80,7 +77,7 @@ final class PopoverController: NSViewController {
 
         let stack = NSStackView(views: [
             header,
-            coursePopup,
+            courseChip,
             topicField,
             recordButton,
             meterRow,
@@ -96,11 +93,11 @@ final class PopoverController: NSViewController {
         stack.edgeInsets = NSEdgeInsets(top: Theme.gutter, left: Theme.gutter,
                                         bottom: Theme.gutter, right: Theme.gutter)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.setCustomSpacing(Theme.tightGap, after: coursePopup)
+        stack.setCustomSpacing(Theme.tightGap, after: courseChip)
         stack.setCustomSpacing(14, after: topicField)
         background.addSubview(stack)
 
-        let fullWidth: [NSView] = [header, coursePopup, topicField, recordButton,
+        let fullWidth: [NSView] = [header, courseChip, topicField, recordButton,
                                    meterRow, permissionCardView, stages, hintLabel, footer]
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: background.topAnchor),
@@ -121,7 +118,7 @@ final class PopoverController: NSViewController {
     }
 
     private func buildHeader() -> NSStackView {
-        let title = Theme.label("LecRec", font: Theme.Font.title)
+        let title = Theme.label("LecRec", font: Theme.Font.title, color: Theme.Palette.ink)
         let settingsButton = Theme.iconButton(symbol: "gearshape", tooltip: "Settings",
                                               target: self, action: #selector(openSettings))
         let quitButton = Theme.iconButton(symbol: "power", tooltip: "Quit LecRec",
@@ -135,14 +132,15 @@ final class PopoverController: NSViewController {
     }
 
     private func buildControls() {
-        coursePopup.target = self
-        coursePopup.action = #selector(courseChanged)
-        coursePopup.setAccessibilityLabel("Course")
+        courseChip.onSelect = { [weak self] slug in
+            guard let self else { return }
+            self.settings.selectedCourseSlug = slug
+            self.settings.save()
+        }
 
-        topicField.placeholderString = "Topic (optional, Claude names it otherwise)"
-        topicField.font = Theme.Font.body
-        topicField.bezelStyle = .roundedBezel
+        topicField.applyChipStyle(placeholder: "Topic (optional)")
         topicField.setAccessibilityLabel("Lecture topic")
+        topicField.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
         recordButton.target = self
         recordButton.action = #selector(toggleRecording)
@@ -206,34 +204,34 @@ final class PopoverController: NSViewController {
                 recordButton.apply(.idle)
                 meterRow.isHidden = true
                 stages.isHidden = true
-                coursePopup.isEnabled = true
+                courseChip.isEnabled = true
                 topicField.isEnabled = true
                 clockLabel.stringValue = "00:00"
             case .recording:
                 recordButton.apply(.recording)
                 meterRow.isHidden = false
                 stages.isHidden = true
-                coursePopup.isEnabled = false
+                courseChip.isEnabled = false
                 topicField.isEnabled = true
                 hintLabel.stringValue = "Recording. You can close this window."
-                hintLabel.textColor = .secondaryLabelColor
+                hintLabel.textColor = Theme.Palette.muted
             case .processing:
                 recordButton.apply(.busy)
                 meterRow.isHidden = true
                 stages.isHidden = false
                 stages.reset()
-                coursePopup.isEnabled = false
+                courseChip.isEnabled = false
                 topicField.isEnabled = false
             case .finished:
                 recordButton.apply(.idle)
                 meterRow.isHidden = true
                 stages.isHidden = false
-                coursePopup.isEnabled = true
+                courseChip.isEnabled = true
                 topicField.isEnabled = true
             case .failed:
                 recordButton.apply(.idle)
                 meterRow.isHidden = true
-                coursePopup.isEnabled = true
+                courseChip.isEnabled = true
                 topicField.isEnabled = true
             }
         }
@@ -258,10 +256,11 @@ final class PopoverController: NSViewController {
     }
 
     private func rebuildCourseMenu() {
-        coursePopup.removeAllItems()
-        coursePopup.addItems(withTitles: settings.courses.map(\.name))
-        if let index = settings.courses.firstIndex(where: { $0.slug == settings.selectedCourseSlug }) {
-            coursePopup.selectItem(at: index)
+        courseChip.configure(courses: settings.courses,
+                             selected: settings.selectedCourseSlug) { [weak self] slug in
+            guard let self else { return Theme.Palette.faint }
+            let index = self.settings.courses.firstIndex { $0.slug == slug } ?? 0
+            return Theme.Palette.courseAccents[index % Theme.Palette.courseAccents.count]
         }
     }
 
@@ -278,18 +277,11 @@ final class PopoverController: NSViewController {
             self.hintLabel.stringValue = warning
                 ? "Almost no sound for 20 seconds. Check the input device in Settings."
                 : "Recording. You can close this window."
-            self.hintLabel.textColor = warning ? .systemOrange : .secondaryLabelColor
+            self.hintLabel.textColor = warning ? Theme.Palette.warn : Theme.Palette.muted
         }
     }
 
     // MARK: - Actions
-
-    @objc private func courseChanged() {
-        let index = coursePopup.indexOfSelectedItem
-        guard index >= 0, index < settings.courses.count else { return }
-        settings.selectedCourseSlug = settings.courses[index].slug
-        settings.save()
-    }
 
     @objc private func openSettings() { onOpenSettings?() }
 
@@ -331,14 +323,14 @@ final class PopoverController: NSViewController {
             guard granted else {
                 // The card is already visible with a button that goes straight there.
                 self.hintLabel.stringValue = "Grant microphone access, then press Start again."
-                self.hintLabel.textColor = .systemOrange
+                self.hintLabel.textColor = Theme.Palette.warn
                 self.permissionCard?.isHidden = false
                 return
             }
 
             guard let course = self.settings.selectedCourse else {
                 self.hintLabel.stringValue = "Add a course in Settings before recording."
-                self.hintLabel.textColor = .systemOrange
+                self.hintLabel.textColor = Theme.Palette.warn
                 self.onOpenSettings?()
                 return
             }
@@ -368,13 +360,13 @@ final class PopoverController: NSViewController {
         guard settings.autoRunPipelineOnStop else {
             apply(phase: .ready)
             hintLabel.stringValue = "Saved \(finished.url.lastPathComponent). Automatic processing is off in Settings."
-            hintLabel.textColor = .secondaryLabelColor
+            hintLabel.textColor = Theme.Palette.muted
             return
         }
 
         apply(phase: .processing)
         hintLabel.stringValue = "This runs on your Mac and takes a few minutes. You can close this window."
-        hintLabel.textColor = .secondaryLabelColor
+        hintLabel.textColor = Theme.Palette.muted
 
         guard let course = settings.selectedCourse else { return }
         let lecture = Lecture(
@@ -402,7 +394,7 @@ final class PopoverController: NSViewController {
                 self.apply(phase: .finished)
                 self.topicField.stringValue = ""
                 self.hintLabel.stringValue = "\(note.lastPathComponent) is ready."
-                self.hintLabel.textColor = .secondaryLabelColor
+                self.hintLabel.textColor = Theme.Palette.muted
                 self.onLibraryChanged?()
                 Notifier.post(title: "Lecture note ready",
                               body: "\(course.name), \(Self.clock(finished.duration)) recorded.")
@@ -423,7 +415,7 @@ final class PopoverController: NSViewController {
 
     private func fail(_ message: String) {
         hintLabel.stringValue = message
-        hintLabel.textColor = .systemRed
+        hintLabel.textColor = Theme.Palette.record
         Diagnostics.log("FAILED: \(message)")
     }
 

@@ -93,10 +93,11 @@ final class Pipeline {
                                  denoise: settings.denoise, log: onLog)
 
         // 2. Transcribe
-        advance(.transcribing, "Running parakeet-mlx on device")
+        advance(.transcribing, "Running \(settings.transcriptionModel.label) on device")
         try FileManager.default.createDirectory(
             at: srt.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try await Transcriber.run(input: cleaned, outputSRT: srt, log: onLog)
+        try await Transcriber.run(input: cleaned, outputSRT: srt,
+                                  model: settings.transcriptionModel, log: onLog)
 
         // 3. Coverage
         advance(.checking, "Comparing transcript length against the recording")

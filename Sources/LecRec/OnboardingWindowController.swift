@@ -132,7 +132,7 @@ final class OnboardingWindowController: NSWindowController {
         case .dependencies:
             titleLabel.stringValue = "What LecRec needs"
             bodyLabel.stringValue = "Install anything marked missing. LecRec runs the install for you where it safely can."
-            dependencies = Dependency.all(for: settings.destination)
+            dependencies = Dependency.all(for: settings.destination, model: settings.transcriptionModel)
             rows = [:]
             for dependency in dependencies {
                 let row = DependencyRow(dependency: dependency) { [weak self] dep in
@@ -302,7 +302,7 @@ final class OnboardingWindowController: NSWindowController {
     }
 
     private func refreshDependencyRows() {
-        dependencies = Dependency.all(for: settings.destination)
+        dependencies = Dependency.all(for: settings.destination, model: settings.transcriptionModel)
         for dependency in dependencies { rows[dependency.title]?.refresh(dependency) }
         let missing = dependencies.filter { $0.isRequired && !$0.isSatisfied }
         primaryButton.isEnabled = missing.isEmpty

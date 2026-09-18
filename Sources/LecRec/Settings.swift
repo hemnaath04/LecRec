@@ -65,6 +65,7 @@ struct Settings: Codable {
     var notesRoot: String = NSString(string: "~/Documents/course-notes").expandingTildeInPath
     var claudeModel: String = "opus"
     var denoise: Bool = true
+    var transcriptionModel: TranscriptionModel = TranscriptionModel.recommended
     var autoRunPipelineOnStop: Bool = true
 
     /// Read the course's recent notes before writing, so each lecture is placed in

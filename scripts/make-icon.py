@@ -18,8 +18,8 @@ CANVAS = 1024
 TILE = 824
 RADIUS = 185
 
-INK_TOP = (44, 46, 54)
-INK_BOTTOM = (22, 23, 28)
+INK_TOP = (34, 34, 41)
+INK_BOTTOM = (18, 18, 23)
 BAR = (236, 238, 243)
 DOT = (255, 69, 58)
 
@@ -44,47 +44,54 @@ def vertical_gradient(size, top, bottom):
 
 
 def draw_mark(tile_size):
-    """Waveform bars, centre bar replaced by the record dot."""
+    """Direction B from the Paper file: a wave rising into the record dot.
+
+    Asymmetric on purpose. A symmetric waveform is what every audio app uses,
+    and the value ramp across the bars gives the mark direction and motion.
+    """
     scale = 4
     size = tile_size * scale
     layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
 
-    heights = [0.34, 0.62, 0.86, 0.62, 0.34]   # symmetric, peaks at the centre
-    count = len(heights)
-    bar_w = size * 0.082
-    gap = size * 0.083
-    span = count * bar_w + (count - 1) * gap
+    # Heights rise left to right; the darkest bar is lifted from the Paper value
+    # so it still separates from the tile at 32 points.
+    bars = [
+        (0.24, (104, 104, 118)),
+        (0.41, (138, 138, 152)),
+        (0.60, (190, 192, 202)),
+        (0.77, (236, 238, 243)),
+    ]
+    bar_w = size * 0.072
+    gap = size * 0.070
+    dot_r = size * 0.098
+    span = len(bars) * bar_w + len(bars) * gap + dot_r * 2
     left = (size - span) / 2
     mid_y = size / 2
 
-    for index, height in enumerate(heights):
+    for index, (height, colour) in enumerate(bars):
         x = left + index * (bar_w + gap)
-        if index == count // 2:
-            continue                            # the dot takes this slot
-        h = size * height * 0.52
+        h = size * height
         draw.rounded_rectangle(
             [x, mid_y - h / 2, x + bar_w, mid_y + h / 2],
-            radius=bar_w / 2, fill=BAR)
+            radius=bar_w / 2, fill=colour)
 
-    dot_r = size * 0.098
-    draw.ellipse([size / 2 - dot_r, mid_y - dot_r, size / 2 + dot_r, mid_y + dot_r],
-                 fill=DOT)
+    dot_cx = left + len(bars) * (bar_w + gap) + dot_r
+    draw.ellipse([dot_cx - dot_r, mid_y - dot_r, dot_cx + dot_r, mid_y + dot_r], fill=DOT)
 
-    return layer.resize((tile_size, tile_size), Image.LANCZOS)
+    return layer.resize((tile_size, tile_size), Image.LANCZOS), dot_cx / scale
 
 
 def build_icon():
     tile = vertical_gradient(TILE, INK_TOP, INK_BOTTOM).convert("RGBA")
     tile.putalpha(rounded_mask(TILE, RADIUS))
 
-    mark = draw_mark(TILE)
+    mark, dot_x = draw_mark(TILE)
     # A soft glow under the dot gives the tile depth without looking like a sticker.
     glow = Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
     gd = ImageDraw.Draw(glow)
-    gr = TILE * 0.20
-    gd.ellipse([TILE / 2 - gr, TILE / 2 - gr, TILE / 2 + gr, TILE / 2 + gr],
-               fill=DOT + (70,))
+    gr = TILE * 0.19
+    gd.ellipse([dot_x - gr, TILE / 2 - gr, dot_x + gr, TILE / 2 + gr], fill=DOT + (80,))
     glow = glow.filter(ImageFilter.GaussianBlur(TILE * 0.06))
     tile = Image.alpha_composite(tile, Image.composite(
         glow, Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0)), glow.split()[3]))

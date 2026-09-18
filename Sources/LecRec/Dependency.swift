@@ -44,11 +44,14 @@ struct Dependency: Identifiable, Hashable {
         kind: .binary("uv"),
         installCommand: "curl -LsSf https://astral.sh/uv/install.sh | sh")
 
-    static let parakeet = Dependency(
-        title: "parakeet-mlx",
-        detail: "Transcribes on this Mac. First run downloads about 2.3 GB.",
-        kind: .binary("parakeet-mlx"),
-        installCommand: "uv tool install parakeet-mlx -U")
+    static func transcriber(_ model: TranscriptionModel) -> Dependency {
+        Dependency(
+            title: model.binaryName,
+            detail: "Transcribes on this Mac using \(model.label). "
+                + "First run downloads \(model.downloadSize).",
+            kind: .binary(model.binaryName),
+            installCommand: model.installHint)
+    }
 
     static let claude = Dependency(
         title: "Claude Code",
@@ -66,8 +69,11 @@ struct Dependency: Identifiable, Hashable {
             manualHint: "After adding it, run `claude` once and approve the Notion sign in.")
     }
 
-    static func all(for destination: Destination) -> [Dependency] {
-        var list = [homebrew, ffmpeg, uv, parakeet, claude]
+    static func all(for destination: Destination,
+                    model: TranscriptionModel = .recommended) -> [Dependency] {
+        var list = [homebrew, ffmpeg]
+        if model == .parakeetV3 { list.append(uv) }
+        list += [transcriber(model), claude]
         if destination.requiredMCPServers.contains("notion") { list.append(notion()) }
         return list
     }
