@@ -10,6 +10,13 @@ enum NotionSetup {
         var dataSourceId: String
         var pageUrl: String
         var parentPageId: String?
+
+        /// Notion hands back `collection://<uuid>` for a data source, but the
+        /// create-pages tool wants the bare uuid.
+        var normalizedDataSourceId: String {
+            dataSourceId.replacingOccurrences(of: "collection://", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     /// One candidate database the user could publish into.
@@ -70,20 +77,28 @@ enum NotionSetup {
         let prompt: String
         if let target = trimmedExisting, !target.isEmpty {
             prompt = """
-            I already keep my lecture notes in a Notion database. Adopt it, do not \
-            create a new one.
+            I already keep my lecture notes in Notion. Adopt what I point you at, do \
+            not create a new database.
 
-            The database is: \(target)
+            What I gave you: \(target)
 
-            1. Resolve it and confirm it is a database I can write to. If that \
-            identifier does not resolve to a writable database, stop and say so.
-            2. Report its properties. It should have a title property, a date property \
-            and a select property for the course. If the select property is missing any \
-            of these options, add the missing ones: \(courseOptions)
-            3. Change nothing else. Do not rename it, do not delete properties, and do \
-            not touch any existing rows.
+            1. Resolve it. It may be any of three things, and all three are normal \
+            because a page link is what Notion's Copy link button produces:
+               a. A data source, which is what you need. Use it.
+               b. A database. Take its data source.
+               c. A **page that contains a database**, inline or as a child. Look inside \
+            it. If there is exactly one database, use that one. If there are several, \
+            pick the one whose name or properties look like lecture or course notes, and \
+            say in your reasoning which you picked and why.
+            2. If none of those apply, or you cannot write to it, stop and say exactly \
+            what you found instead.
+            3. Check its properties: a title property, a date property, and a select \
+            property for the course. If the select is missing any of these options, add \
+            the missing ones: \(courseOptions)
+            4. Change nothing else. Do not rename it, do not remove properties, do not \
+            reorder them, and do not touch any existing rows.
 
-            Return only the JSON object described by the schema: its data source id, its \
+            Return only the JSON object described by the schema: the data source id, its \
             page URL, and the id of the page it lives under if it has one.
             """
         } else {

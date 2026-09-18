@@ -493,7 +493,7 @@ final class OnboardingWindowController: NSWindowController {
                         courses: self.settings.courses, existing: existing) { line in
                         DispatchQueue.main.async { self.logLabel.stringValue = line }
                     }
-                    self.settings.notionDataSourceID = result.dataSourceId
+                    self.settings.notionDataSourceID = result.normalizedDataSourceId
                     self.settings.notionParentPageID = result.parentPageId ?? ""
                     self.settings.notionDatabaseURL = result.pageUrl
                     self.settings.hasCompletedOnboarding = true
