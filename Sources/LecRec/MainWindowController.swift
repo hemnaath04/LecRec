@@ -20,7 +20,7 @@ final class MainWindowController: NSWindowController {
     private let summaryLabel = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.faint, lines: 2)
     private let recordButton = RecordButton(frame: .zero)
     private let recordCaption = Theme.label("", font: Theme.Font.caption, color: Theme.Palette.dim)
-    private let coursePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let courseChip = CourseChip(frame: .zero)
     private let listRange = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.faint)
     private var rows = NSStackView()
 
@@ -55,20 +55,10 @@ final class MainWindowController: NSWindowController {
     // MARK: - Layout
 
     private func buildLayout() {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = Theme.Palette.canvas.cgColor
+        let container = CanvasBackgroundView()
 
-        let sidebarHost = NSView()
-        sidebarHost.wantsLayer = true
-        sidebarHost.layer?.backgroundColor = Theme.Palette.sidebar.cgColor
+        let sidebarHost = SidebarBackgroundView()
         sidebarHost.translatesAutoresizingMaskIntoConstraints = false
-
-        let edge = NSView()
-        edge.wantsLayer = true
-        edge.layer?.backgroundColor = Theme.Palette.hairline.cgColor
-        edge.translatesAutoresizingMaskIntoConstraints = false
-        sidebarHost.addSubview(edge)
 
         sidebar.orientation = .vertical
         sidebar.alignment = .leading
@@ -86,10 +76,6 @@ final class MainWindowController: NSWindowController {
 
         NSLayoutConstraint.activate([
             sidebarHost.widthAnchor.constraint(equalToConstant: 236),
-            edge.trailingAnchor.constraint(equalTo: sidebarHost.trailingAnchor),
-            edge.topAnchor.constraint(equalTo: sidebarHost.topAnchor),
-            edge.bottomAnchor.constraint(equalTo: sidebarHost.bottomAnchor),
-            edge.widthAnchor.constraint(equalToConstant: 1),
             sidebar.topAnchor.constraint(equalTo: sidebarHost.topAnchor, constant: 30),
             sidebar.leadingAnchor.constraint(equalTo: sidebarHost.leadingAnchor),
             sidebar.trailingAnchor.constraint(equalTo: sidebarHost.trailingAnchor),
@@ -146,13 +132,16 @@ final class MainWindowController: NSWindowController {
         left.spacing = 4
         left.setCustomSpacing(8, after: heroRow)
 
-        coursePopup.target = self
-        coursePopup.action = #selector(courseChanged)
+        courseChip.onSelect = { [weak self] slug in
+            guard let self else { return }
+            self.settings.selectedCourseSlug = slug
+            self.settings.save()
+        }
         recordButton.target = self
         recordButton.action = #selector(startRecording)
         recordCaption.stringValue = "Keeps running if you close this window"
 
-        let right = NSStackView(views: [coursePopup, recordButton, recordCaption])
+        let right = NSStackView(views: [courseChip, recordButton, recordCaption])
         right.orientation = .vertical
         right.alignment = .trailing
         right.spacing = 9
@@ -167,7 +156,7 @@ final class MainWindowController: NSWindowController {
         NSLayoutConstraint.activate([
             hero.widthAnchor.constraint(equalTo: content.widthAnchor, constant: -112),
             recordButton.widthAnchor.constraint(equalToConstant: 196),
-            coursePopup.widthAnchor.constraint(equalToConstant: 196),
+            courseChip.widthAnchor.constraint(equalToConstant: 196),
             summaryLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 520),
         ])
     }
@@ -328,22 +317,13 @@ final class MainWindowController: NSWindowController {
     }
 
     private func rebuildCoursePopup() {
-        coursePopup.removeAllItems()
-        coursePopup.addItems(withTitles: settings.courses.map(\.name))
-        if let index = settings.courses.firstIndex(where: { $0.slug == settings.selectedCourseSlug }) {
-            coursePopup.selectItem(at: index)
+        courseChip.configure(courses: settings.courses,
+                             selected: settings.selectedCourseSlug) { [weak self] slug in
+            self?.accent(for: slug) ?? Theme.Palette.faint
         }
-        coursePopup.isEnabled = !settings.courses.isEmpty
     }
 
     // MARK: - Actions
-
-    @objc private func courseChanged() {
-        let index = coursePopup.indexOfSelectedItem
-        guard index >= 0, index < settings.courses.count else { return }
-        settings.selectedCourseSlug = settings.courses[index].slug
-        settings.save()
-    }
 
     @objc private func openSettings() { onOpenSettings?() }
 
