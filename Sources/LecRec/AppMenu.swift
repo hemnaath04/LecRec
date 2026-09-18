@@ -12,6 +12,10 @@ enum AppMenu {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
+        let settingsItem = appMenu.addItem(withTitle: "Settings\u{2026}",
+                                           action: Selector(("showSettingsFromMenu:")), keyEquivalent: ",")
+        settingsItem.target = NSApp.delegate
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit LecRec", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
@@ -35,8 +39,20 @@ enum AppMenu {
         editItem.submenu = editMenu
         main.addItem(editItem)
 
+        let viewItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "View")
+        let dashboard = viewMenu.addItem(withTitle: "Dashboard",
+                                         action: Selector(("showDashboard:")), keyEquivalent: "0")
+        dashboard.target = NSApp.delegate
+        let refresh = viewMenu.addItem(withTitle: "Refresh",
+                                       action: Selector(("refreshLibrary:")), keyEquivalent: "r")
+        refresh.target = NSApp.delegate
+        viewItem.submenu = viewMenu
+        main.addItem(viewItem)
+
         let windowItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         windowItem.submenu = windowMenu
         main.addItem(windowItem)

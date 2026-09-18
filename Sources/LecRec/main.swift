@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var popoverController: PopoverController!
     private var settingsController: SettingsWindowController?
     private var onboardingController: OnboardingWindowController?
+    private var mainWindowController: MainWindowController?
     private var settings = Settings.load()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -15,6 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popoverController = PopoverController(settings: settings)
         popoverController.onStatusChange = { [weak self] recording in
             self?.updateIcon(recording: recording)
+            self?.mainWindowController?.setRecording(recording)
+        }
+        popoverController.onLibraryChanged = { [weak self] in
+            self?.mainWindowController?.reload()
         }
         popoverController.onOpenSettings = { [weak self] in self?.showSettings() }
 
@@ -30,9 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // press, so setup happens before the user can get that far.
         if !settings.hasCompletedOnboarding || !settings.isReadyToRecord {
             showOnboarding()
-        } else if !SkillInstaller.isInstalled {
-            // A fresh build ships an updated skill; keep the installed copy current.
-            try? SkillInstaller.install()
+        } else {
+            if !SkillInstaller.isInstalled {
+                // A fresh build ships an updated skill; keep the installed copy current.
+                try? SkillInstaller.install()
+            }
+            showMainWindow()
         }
     }
 
@@ -66,11 +74,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The app is a normal windowed app that also lives in the menu bar, rather
+    /// than a menu bar utility with no home.
+    func showMainWindow() {
+        if let existing = mainWindowController {
+            existing.apply(settings: settings)
+            existing.showWindow(nil)
+            existing.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let controller = MainWindowController(settings: settings)
+        controller.onOpenSettings = { [weak self] in self?.showSettings() }
+        controller.onRecordPressed = { [weak self] _ in
+            self?.popoverController.toggleRecordingExternally()
+        }
+        mainWindowController = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        controller.setRecording(popoverController.isRecording)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func showDashboard(_ sender: Any?) { showMainWindow() }
+
+    @objc func refreshLibrary(_ sender: Any?) { mainWindowController?.reload() }
+
+    @objc func showSettingsFromMenu(_ sender: Any?) { showSettings() }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { showMainWindow() }
+        return true
+    }
+
     private func showOnboarding() {
         let controller = OnboardingWindowController(settings: settings)
         controller.onFinish = { [weak self] updated in
-            self?.settings = updated
-            self?.popoverController.reload(settings: updated)
+            guard let self else { return }
+            self.settings = updated
+            self.popoverController.reload(settings: updated)
+            try? SkillInstaller.install()
+            self.showMainWindow()
         }
         onboardingController = controller
         controller.showWindow(nil)
@@ -78,12 +122,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func showSettings() {
+    func showSettings() {
         popover.performClose(nil)
         let controller = SettingsWindowController(settings: settings)
         controller.onSave = { [weak self] updated in
             self?.settings = updated
             self?.popoverController.reload(settings: updated)
+            self?.mainWindowController?.apply(settings: updated)
         }
         settingsController = controller
         controller.showWindow(nil)
@@ -95,5 +140,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 let application = NSApplication.shared
 let delegate = AppDelegate()
 application.delegate = delegate
-application.setActivationPolicy(.accessory)   // menu bar only, no Dock icon
+application.setActivationPolicy(.regular)   // real app: Dock icon and app switcher
 application.run()

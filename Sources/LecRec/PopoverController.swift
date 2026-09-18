@@ -312,6 +312,18 @@ final class PopoverController: NSViewController {
         recorder.isRecording ? finishRecording() : beginRecording()
     }
 
+    /// Driven from the main window, so both surfaces share one recorder rather
+    /// than each owning their own and fighting over the microphone.
+    func toggleRecordingExternally() {
+        _ = view            // force loadView, the controls must exist first
+        toggleRecording()
+    }
+
+    var isRecording: Bool { recorder.isRecording }
+
+    /// Fires whenever a run finishes, so the dashboard can pick up the new lecture.
+    var onLibraryChanged: (() -> Void)?
+
     private func beginRecording() {
         Task { @MainActor in
             let granted = await Recorder.requestPermission()
@@ -391,6 +403,7 @@ final class PopoverController: NSViewController {
                 self.topicField.stringValue = ""
                 self.hintLabel.stringValue = "\(note.lastPathComponent) is ready."
                 self.hintLabel.textColor = .secondaryLabelColor
+                self.onLibraryChanged?()
                 Notifier.post(title: "Lecture note ready",
                               body: "\(course.name), \(Self.clock(finished.duration)) recorded.")
             } catch {
@@ -401,6 +414,7 @@ final class PopoverController: NSViewController {
                 self.lastNoteURL = finished.url
                 self.openNoteButton.title = "Open recording folder"
                 self.openNoteButton.isHidden = false
+                self.onLibraryChanged?()
                 Notifier.post(title: "Lecture processing failed",
                               body: "Your audio is safe at \(finished.url.lastPathComponent).")
             }
