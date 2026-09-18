@@ -60,7 +60,7 @@ final class RecordButton: NSControl {
             dot.isHidden = true
             spinner.stopAnimation(nil)
             spinner.isHidden = true
-            setBackground(.controlAccentColor)
+            setBackground(Theme.Palette.record)
             stopPulse()
             isEnabled = true
         case .recording:
@@ -69,7 +69,7 @@ final class RecordButton: NSControl {
             dot.isHidden = false
             spinner.stopAnimation(nil)
             spinner.isHidden = true
-            setBackground(.systemRed)
+            setBackground(Theme.Palette.record)
             startPulse()
             isEnabled = true
         case .busy:
@@ -78,7 +78,7 @@ final class RecordButton: NSControl {
             dot.isHidden = true
             spinner.isHidden = false
             spinner.startAnimation(nil)
-            setBackground(NSColor.quaternaryLabelColor.withAlphaComponent(0.18))
+            setBackground(Theme.Palette.surface)
             stopPulse()
             isEnabled = false
         }

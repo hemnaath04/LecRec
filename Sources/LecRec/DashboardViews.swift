@@ -1,150 +1,116 @@
 import AppKit
 
-/// A single number with a label. Big figure, quiet caption, one accent.
-final class StatTile: NSView {
-    private let value = Theme.label("", font: .systemFont(ofSize: 27, weight: .semibold))
-    private let caption = Theme.label("", font: Theme.Font.caption, color: .secondaryLabelColor)
-    private let glyph = NSImageView()
-
-    init(symbol: String, tint: NSColor) {
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerCurve = .continuous
-        layer?.cornerRadius = 12
-        layer?.backgroundColor = NSColor.quaternaryLabelColor.withAlphaComponent(0.10).cgColor
-
-        glyph.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        glyph.contentTintColor = tint
-        glyph.translatesAutoresizingMaskIntoConstraints = false
-        value.maximumNumberOfLines = 1
-
-        let stack = NSStackView(views: [glyph, value, caption])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 3
-        stack.setCustomSpacing(8, after: glyph)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 15),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 15),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -15),
-            glyph.widthAnchor.constraint(equalToConstant: 16),
-            glyph.heightAnchor.constraint(equalToConstant: 16),
-        ])
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
-    func set(value newValue: String, caption newCaption: String) {
-        value.stringValue = newValue
-        caption.stringValue = newCaption
-    }
-}
-
-/// One lecture in the recent list. Shows what is actually known and, more
-/// usefully, what is missing.
+/// A lecture as one typographic row, matching the Paper design: a fixed course
+/// lane, a title, a meta line, a right-aligned coverage column that never wraps,
+/// and a quiet Open affordance.
 final class LectureRow: NSView {
-    private let titleLabel = Theme.label("", font: .systemFont(ofSize: 13, weight: .medium))
-    private let metaLabel = Theme.label("", font: Theme.Font.caption, color: .secondaryLabelColor)
-    private let courseChip = Theme.label("", font: .systemFont(ofSize: 10, weight: .semibold))
-    private let chipBackground = NSView()
-    private let openNote = NSButton()
-    private let openNotion = NSButton()
+    private let courseTag = Theme.label("", font: Theme.Font.eyebrow, tracking: 0.8)
+    private let titleLabel = Theme.label("", font: Theme.Font.rowTitle, color: Theme.Palette.ink)
+    private let metaLabel = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.faint)
+    private let statusLabel = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.faint)
+    private let openButton = NSButton()
+    private let hairline = NSView()
     private var item: LibraryItem?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerCurve = .continuous
-        layer?.cornerRadius = 10
 
-        chipBackground.wantsLayer = true
-        chipBackground.layer?.cornerRadius = 5
-        chipBackground.layer?.cornerCurve = .continuous
-        chipBackground.translatesAutoresizingMaskIntoConstraints = false
-        courseChip.translatesAutoresizingMaskIntoConstraints = false
-        chipBackground.addSubview(courseChip)
+        hairline.wantsLayer = true
+        hairline.layer?.backgroundColor = Theme.Palette.surface.cgColor
+        hairline.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hairline)
 
-        for button in [openNote, openNotion] {
-            button.bezelStyle = .accessoryBarAction
-            button.controlSize = .small
-            button.target = self
-        }
-        openNote.title = "Note"
-        openNote.action = #selector(revealNote)
-        openNotion.title = "Notion"
-        openNotion.action = #selector(openInNotion)
+        courseTag.alignment = .left
+        statusLabel.alignment = .right
+        // The lane that wrapped in review. A fixed width keeps every row aligned.
+        statusLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        statusLabel.lineBreakMode = .byTruncatingTail
+
+        openButton.title = "Open"
+        openButton.font = Theme.Font.caption
+        openButton.bezelStyle = .accessoryBarAction
+        openButton.isBordered = false
+        openButton.contentTintColor = Theme.Palette.muted
+        openButton.wantsLayer = true
+        openButton.layer?.cornerRadius = 6
+        openButton.layer?.cornerCurve = .continuous
+        openButton.layer?.borderWidth = 1
+        openButton.layer?.borderColor = Theme.Palette.stroke.cgColor
+        openButton.target = self
+        openButton.action = #selector(open)
 
         let text = NSStackView(views: [titleLabel, metaLabel])
         text.orientation = .vertical
         text.alignment = .leading
-        text.spacing = 2
+        text.spacing = 3
 
-        let row = NSStackView(views: [chipBackground, text, NSView(), openNote, openNotion])
+        let row = NSStackView(views: [courseTag, text, NSView(), statusLabel, openButton])
         row.orientation = .horizontal
         row.alignment = .centerY
-        row.spacing = 11
+        row.spacing = 18
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
 
         NSLayoutConstraint.activate([
-            row.topAnchor.constraint(equalTo: topAnchor, constant: 9),
-            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
-            courseChip.topAnchor.constraint(equalTo: chipBackground.topAnchor, constant: 3),
-            courseChip.bottomAnchor.constraint(equalTo: chipBackground.bottomAnchor, constant: -3),
-            courseChip.leadingAnchor.constraint(equalTo: chipBackground.leadingAnchor, constant: 7),
-            courseChip.trailingAnchor.constraint(equalTo: chipBackground.trailingAnchor, constant: -7),
-            chipBackground.widthAnchor.constraint(greaterThanOrEqualToConstant: 38),
+            hairline.topAnchor.constraint(equalTo: topAnchor),
+            hairline.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hairline.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hairline.heightAnchor.constraint(equalToConstant: 1),
+            row.topAnchor.constraint(equalTo: topAnchor, constant: 15),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -15),
+            courseTag.widthAnchor.constraint(equalToConstant: 34),
+            statusLabel.widthAnchor.constraint(equalToConstant: 112),
+            openButton.widthAnchor.constraint(equalToConstant: 56),
+            openButton.heightAnchor.constraint(equalToConstant: 26),
         ])
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func configure(_ newItem: LibraryItem) {
+    func configure(_ newItem: LibraryItem, accent: NSColor, showHairline: Bool) {
         item = newItem
+        hairline.isHidden = !showHairline
+
+        courseTag.attributedStringValue = NSAttributedString(
+            string: newItem.course.uppercased(),
+            attributes: [.font: Theme.Font.eyebrow, .foregroundColor: accent, .kern: 0.8])
         titleLabel.stringValue = newItem.title
 
-        var parts: [String] = [Self.dateText(newItem.date)]
+        var parts = [Self.dateText(newItem.date)]
         if newItem.duration > 0 { parts.append(Library.clock(newItem.duration)) }
-        if newItem.wordCount > 0 { parts.append("\(Library.formatted(newItem.wordCount)) words") }
+        parts.append(newItem.hasNote
+            ? "\(Library.formatted(newItem.wordCount)) words"
+            : "no note yet")
+        metaLabel.stringValue = parts.joined(separator: "  ·  ")
+
+        // Only two things are worth an alarming colour: an unprocessed recording,
+        // and a transcript that did not cover the lecture.
+        let lowCoverage = (newItem.coverage ?? 1) < 0.95
+        metaLabel.textColor = (!newItem.hasNote || lowCoverage) ? Theme.Palette.warn : Theme.Palette.faint
+
         if let coverage = newItem.coverage {
             let pct = Int((coverage * 100).rounded())
-            parts.append(pct >= 95 ? "\(pct)% covered" : "only \(pct)% covered")
+            statusLabel.stringValue = lowCoverage ? "only \(pct)% covered" : "\(pct)% covered"
+            statusLabel.textColor = lowCoverage ? Theme.Palette.warn : Theme.Palette.faint
+        } else if !newItem.hasNote {
+            statusLabel.stringValue = "not processed"
+            statusLabel.textColor = Theme.Palette.warn
+        } else {
+            statusLabel.stringValue = ""
         }
-        if !newItem.hasNote { parts.append("no note yet") }
-        metaLabel.stringValue = parts.joined(separator: "  ·  ")
-        metaLabel.textColor = (newItem.coverage ?? 1) < 0.95 || !newItem.hasNote
-            ? .systemOrange : .secondaryLabelColor
 
-        courseChip.stringValue = newItem.course.uppercased()
-        let tint = Self.tint(for: newItem.course)
-        courseChip.textColor = tint
-        chipBackground.layer?.backgroundColor = tint.withAlphaComponent(0.16).cgColor
-
-        openNote.isHidden = newItem.noteURL == nil
-        openNotion.isHidden = newItem.notionURL == nil
+        openButton.isHidden = newItem.noteURL == nil && newItem.notionURL == nil
     }
 
-    @objc private func revealNote() {
-        guard let url = item?.noteURL else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    @objc private func openInNotion() {
-        guard let link = item?.notionURL, let url = URL(string: link) else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    static func tint(for course: String) -> NSColor {
-        // Stable per course, so a course keeps its colour between launches.
-        let palette: [NSColor] = [.systemBlue, .systemPurple, .systemTeal, .systemIndigo,
-                                  .systemPink, .systemGreen]
-        return palette[abs(course.hashValue) % palette.count]
+    @objc private func open() {
+        if let link = item?.notionURL, let url = URL(string: link) {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        if let url = item?.noteURL { NSWorkspace.shared.open(url) }
     }
 
     private static func dateText(_ date: Date) -> String {
@@ -153,4 +119,66 @@ final class LectureRow: NSView {
         formatter.dateFormat = "EEE d MMM"
         return formatter.string(from: date)
     }
+}
+
+/// A sidebar entry: optional accent dot, label, and a count on the right.
+final class SidebarItem: NSView {
+    private let button = NSButton()
+    private let countLabel = Theme.label("", font: Theme.Font.caption, color: Theme.Palette.faint)
+    private let marker = NSView()
+    private var accent: NSColor?
+
+    var onSelect: (() -> Void)?
+
+    init(title: String, count: Int, accent: NSColor?, selected: Bool) {
+        self.accent = accent
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = selected ? Theme.Palette.surface.cgColor : NSColor.clear.cgColor
+
+        marker.wantsLayer = true
+        marker.layer?.backgroundColor = Theme.Palette.record.cgColor
+        marker.isHidden = !selected
+        marker.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(marker)
+
+        button.title = title
+        button.font = selected
+            ? NSFont.systemFont(ofSize: 12.5, weight: .medium) : Theme.Font.sidebarItem
+        button.contentTintColor = selected ? Theme.Palette.ink : Theme.Palette.inkSoft
+        button.bezelStyle = .accessoryBarAction
+        button.isBordered = false
+        button.alignment = .left
+        button.target = self
+        button.action = #selector(tapped)
+
+        countLabel.stringValue = count > 0 ? "\(count)" : ""
+        countLabel.alignment = .right
+
+        var views: [NSView] = []
+        if let accent { views.append(Theme.dot(accent)) }
+        views += [button, NSView(), countLabel]
+
+        let row = NSStackView(views: views)
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = accent == nil ? 0 : 9
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+
+        NSLayoutConstraint.activate([
+            marker.leadingAnchor.constraint(equalTo: leadingAnchor),
+            marker.topAnchor.constraint(equalTo: topAnchor),
+            marker.bottomAnchor.constraint(equalTo: bottomAnchor),
+            marker.widthAnchor.constraint(equalToConstant: 2),
+            row.topAnchor.constraint(equalTo: topAnchor, constant: 7),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func tapped() { onSelect?() }
 }
