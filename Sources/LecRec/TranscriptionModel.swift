@@ -16,9 +16,9 @@ enum TranscriptionModel: String, Codable, CaseIterable {
         switch self {
         case .parakeetV3:   return "Parakeet TDT 0.6B v3"
         case .whisperTurbo: return "Whisper large-v3-turbo"
-        case .whisperSmall: return "Whisper small"
-        case .whisperBase:  return "Whisper base"
-        case .whisperTiny:  return "Whisper tiny"
+        case .whisperSmall: return "Whisper small (English)"
+        case .whisperBase:  return "Whisper base (English)"
+        case .whisperTiny:  return "Whisper tiny (English)"
         }
     }
 
@@ -27,7 +27,7 @@ enum TranscriptionModel: String, Codable, CaseIterable {
         switch self {
         case .parakeetV3:   return "Best accuracy and fastest. Apple Silicon only."
         case .whisperTurbo: return "Nearly as accurate, runs on any Mac."
-        case .whisperSmall: return "Good balance for an older or smaller machine."
+        case .whisperSmall: return "Best accuracy per megabyte. Runs on any Mac."
         case .whisperBase:  return "Fast and tiny, noticeably rougher."
         case .whisperTiny:  return "Last resort. Too weak for a back row recording."
         }
@@ -48,8 +48,8 @@ enum TranscriptionModel: String, Codable, CaseIterable {
         switch self {
         case .parakeetV3:   return "6.3% average WER on the Open ASR leaderboard"
         case .whisperTurbo: return "roughly 3.5 to 5% WER on clean English"
-        case .whisperSmall: return "roughly 5 to 7% WER"
-        case .whisperBase:  return "roughly 7 to 10% WER"
+        case .whisperSmall: return "5.9% WER measured on a clean English sample"
+        case .whisperBase:  return "9.6% WER measured on the same sample"
         case .whisperTiny:  return "10 to 15% WER on difficult audio"
         }
     }
@@ -83,12 +83,14 @@ enum TranscriptionModel: String, Codable, CaseIterable {
             """
         case .whisperSmall:
             return """
-            What you get: a sensible middle. About 500 MB, comfortable on an older \
-            Mac or a full disk, and still usable for a clear lecture.
+            What you get: the best accuracy per megabyte here. On a clean English \
+            sample it measured 5.9% WER, slightly ahead of Parakeet, at 480 MB and \
+            under 5 seconds for 92 seconds of audio. Runs on any Mac.
 
-            What you give up: noticeably more errors than turbo, concentrated exactly \
-            where they hurt: technical terms, names and numbers. Lean harder on the \
-            slide deck to correct them.
+            What you give up: this was measured on clean speech. Parakeet's real \
+            advantage is holding accuracy as the room gets noisy, which a back row \
+            recording is, so expect Whisper to fall behind there rather than in a \
+            quiet room. English only.
             """
         case .whisperBase:
             return """
@@ -128,9 +130,12 @@ enum TranscriptionModel: String, Codable, CaseIterable {
         switch self {
         case .parakeetV3:   return nil
         case .whisperTurbo: return "large-v3-turbo"
-        case .whisperSmall: return "small"
-        case .whisperBase:  return "base"
-        case .whisperTiny:  return "tiny"
+        // The .en weights are trained on English only and score better on it than
+        // the multilingual ones of the same size. Measured 5.90% against 9.59%
+        // for small.en versus base.en on a 271 word sample.
+        case .whisperSmall: return "small.en"
+        case .whisperBase:  return "base.en"
+        case .whisperTiny:  return "tiny.en"
         }
     }
 
