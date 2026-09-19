@@ -11,7 +11,7 @@ final class RecordButton: NSControl {
 
     private var buttonState: State = .idle
     private var isPressed = false
-    private let titleLabel = Theme.label("Start recording", font: .systemFont(ofSize: 13, weight: .semibold))
+    private let titleLabel = Theme.label("Start recording", font: Theme.Font.of(13, .semibold))
     private let dot = NSView()
     private let spinner = NSProgressIndicator()
 
@@ -56,11 +56,11 @@ final class RecordButton: NSControl {
         switch newState {
         case .idle:
             titleLabel.stringValue = "Start recording"
-            titleLabel.textColor = .white
+            titleLabel.textColor = NSColor(srgbRed: 0.09, green: 0.13, blue: 0.04, alpha: 1)
             dot.isHidden = true
             spinner.stopAnimation(nil)
             spinner.isHidden = true
-            setBackground(Theme.Palette.record)
+            setBackground(Theme.Palette.leaf)
             stopPulse()
             isEnabled = true
         case .recording:

@@ -7,7 +7,7 @@ import AppKit
 /// dark surface.
 final class CourseChip: NSControl {
     private let dot = NSView()
-    private let titleLabel = Theme.label("", font: .systemFont(ofSize: 12.5, weight: .regular),
+    private let titleLabel = Theme.label("", font: Theme.Font.of(12.5, .regular),
                                          color: Theme.Palette.inkSoft)
     private let chevron = NSImageView()
     private var courses: [Course] = []
@@ -81,7 +81,7 @@ final class CourseChip: NSControl {
         highlight(true)
 
         let menu = NSMenu()
-        menu.font = .systemFont(ofSize: 12.5)
+        menu.font = Theme.Font.of(12.5)
         for course in courses {
             let item = NSMenuItem(title: course.name, action: #selector(pick(_:)), keyEquivalent: "")
             item.target = self

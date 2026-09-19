@@ -11,45 +11,83 @@ enum Theme {
     static let corner: CGFloat = 10
 
     enum Palette {
-        static let canvas = NSColor(srgbRed: 0.055, green: 0.055, blue: 0.063, alpha: 1)   // #0E0E10
-        static let sidebar = NSColor(srgbRed: 0.075, green: 0.075, blue: 0.086, alpha: 1)  // #131316
-        static let hairline = NSColor(srgbRed: 0.122, green: 0.122, blue: 0.137, alpha: 1) // #1F1F23
-        static let surface = NSColor(srgbRed: 0.110, green: 0.110, blue: 0.129, alpha: 1)  // #1C1C21
-        static let stroke = NSColor(srgbRed: 0.165, green: 0.165, blue: 0.192, alpha: 1)   // #2A2A31
-        static let ink = NSColor(srgbRed: 0.957, green: 0.957, blue: 0.961, alpha: 1)      // #F4F4F5
-        static let inkSoft = NSColor(srgbRed: 0.706, green: 0.706, blue: 0.745, alpha: 1)  // #B4B4BE
-        static let muted = NSColor(srgbRed: 0.541, green: 0.541, blue: 0.580, alpha: 1)    // #8A8A94
-        static let faint = NSColor(srgbRed: 0.431, green: 0.431, blue: 0.471, alpha: 1)    // #6E6E78
-        static let dim = NSColor(srgbRed: 0.353, green: 0.353, blue: 0.388, alpha: 1)      // #5A5A63
-        static let record = NSColor(srgbRed: 1.0, green: 0.271, blue: 0.227, alpha: 1)     // #FF453A
-        static let warn = NSColor(srgbRed: 0.878, green: 0.627, blue: 0.188, alpha: 1)     // #E0A030
+        // Taken from the install window. The reference uses bright green as the
+        // field behind a dark olive panel, so the app is the panel: green reads
+        // through the surfaces and the accent, not as a page of lime.
+        static let canvas = NSColor(srgbRed: 0.106, green: 0.145, blue: 0.055, alpha: 1)   // #1B250E -> deep olive
+        static let sidebar = NSColor(srgbRed: 0.082, green: 0.114, blue: 0.043, alpha: 1)
+        static let hairline = NSColor(srgbRed: 0.180, green: 0.235, blue: 0.098, alpha: 1)
+        static let surface = NSColor(srgbRed: 0.161, green: 0.212, blue: 0.086, alpha: 1)
+        static let stroke = NSColor(srgbRed: 0.243, green: 0.310, blue: 0.133, alpha: 1)
 
-        /// Stable per-course accents, in the order courses were added.
+        static let ink = NSColor(srgbRed: 0.965, green: 0.984, blue: 0.929, alpha: 1)      // warm white
+        static let inkSoft = NSColor(srgbRed: 0.839, green: 0.894, blue: 0.769, alpha: 1)
+        static let muted = NSColor(srgbRed: 0.667, green: 0.737, blue: 0.573, alpha: 1)
+        static let faint = NSColor(srgbRed: 0.545, green: 0.616, blue: 0.451, alpha: 1)
+        static let dim = NSColor(srgbRed: 0.427, green: 0.490, blue: 0.345, alpha: 1)
+
+        /// The bright leaf green from the install window, used for the primary action.
+        static let leaf = NSColor(srgbRed: 0.612, green: 0.831, blue: 0.188, alpha: 1)     // #9CD430
+        static let leafDeep = NSColor(srgbRed: 0.345, green: 0.541, blue: 0.055, alpha: 1)
+        /// Red stays reserved for one thing only: a recording that is actually live.
+        static let record = NSColor(srgbRed: 1.0, green: 0.271, blue: 0.227, alpha: 1)
+        static let warn = NSColor(srgbRed: 0.988, green: 0.792, blue: 0.290, alpha: 1)
+
         static let courseAccents = [
-            NSColor(srgbRed: 0.369, green: 0.620, blue: 1.0, alpha: 1),                    // #5E9EFF
-            NSColor(srgbRed: 0.753, green: 0.549, blue: 1.0, alpha: 1),                    // #C08CFF
-            NSColor(srgbRed: 0.353, green: 0.831, blue: 0.702, alpha: 1),
-            NSColor(srgbRed: 1.0, green: 0.667, blue: 0.408, alpha: 1),
-            NSColor(srgbRed: 0.980, green: 0.514, blue: 0.702, alpha: 1),
+            NSColor(srgbRed: 0.612, green: 0.831, blue: 0.188, alpha: 1),
+            NSColor(srgbRed: 0.427, green: 0.827, blue: 0.671, alpha: 1),
+            NSColor(srgbRed: 0.949, green: 0.729, blue: 0.290, alpha: 1),
+            NSColor(srgbRed: 0.690, green: 0.686, blue: 0.984, alpha: 1),
+            NSColor(srgbRed: 0.965, green: 0.549, blue: 0.494, alpha: 1),
         ]
     }
 
-    enum Font {
-        static let title = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        static let body = NSFont.systemFont(ofSize: 12, weight: .regular)
-        static let caption = NSFont.systemFont(ofSize: 11, weight: .regular)
-        static let captionStrong = NSFont.systemFont(ofSize: 11, weight: .medium)
-        static let clock = NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .medium)
-        static let stage = NSFont.systemFont(ofSize: 11.5, weight: .regular)
+    /// Inter, bundled with the app. Registered once at launch; if registration
+    /// ever fails the system font is used rather than crashing on a nil font.
+    enum Typeface {
+        static func register() {
+            guard let directory = Bundle.main.resourceURL?
+                .appendingPathComponent("fonts", isDirectory: true),
+                  let files = try? FileManager.default.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: nil)
+            else { return }
+            for url in files where url.pathExtension.lowercased() == "ttf" {
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
+        }
 
-        // Dashboard scale. The gap between hero and everything else is the point.
-        static let hero = NSFont.systemFont(ofSize: 56, weight: .semibold)
-        static let heroUnit = NSFont.systemFont(ofSize: 17, weight: .regular)
-        static let sectionTitle = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        static let rowTitle = NSFont.systemFont(ofSize: 14, weight: .medium)
-        static let rowMeta = NSFont.systemFont(ofSize: 11.5, weight: .regular)
-        static let eyebrow = NSFont.systemFont(ofSize: 9.5, weight: .semibold)
-        static let sidebarItem = NSFont.systemFont(ofSize: 12.5, weight: .regular)
+        static func inter(_ size: CGFloat, _ weight: NSFont.Weight) -> NSFont {
+            let name: String
+            switch weight {
+            case .bold, .heavy, .black: name = "Inter-Bold"
+            case .semibold:             name = "Inter-SemiBold"
+            case .medium:               name = "Inter-Medium"
+            default:                    name = "Inter-Regular"
+            }
+            return NSFont(name: name, size: size)
+                ?? .systemFont(ofSize: size, weight: weight)
+        }
+    }
+
+    enum Font {
+        static func of(_ size: CGFloat, _ weight: NSFont.Weight = .regular) -> NSFont {
+            Typeface.inter(size, weight)
+        }
+
+        static var title: NSFont { of(13, .semibold) }
+        static var body: NSFont { of(12) }
+        static var caption: NSFont { of(11) }
+        static var captionStrong: NSFont { of(11, .medium) }
+        static var clock: NSFont { .monospacedDigitSystemFont(ofSize: 15, weight: .medium) }
+        static var stage: NSFont { of(11.5) }
+
+        static var hero: NSFont { of(56, .semibold) }
+        static var heroUnit: NSFont { of(17) }
+        static var sectionTitle: NSFont { of(14, .semibold) }
+        static var rowTitle: NSFont { of(14, .medium) }
+        static var rowMeta: NSFont { of(11.5) }
+        static var eyebrow: NSFont { of(9.5, .semibold) }
+        static var sidebarItem: NSFont { of(12.5) }
     }
 
     enum Motion {

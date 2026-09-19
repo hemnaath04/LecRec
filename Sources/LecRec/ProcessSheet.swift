@@ -26,7 +26,7 @@ final class ProcessSheet: NSViewController {
         root.wantsLayer = true
         root.layer?.backgroundColor = Theme.Palette.canvas.cgColor
 
-        let title = Theme.label("Process this lecture", font: .systemFont(ofSize: 16, weight: .semibold),
+        let title = Theme.label("Process this lecture", font: Theme.Font.of(16, .semibold),
                                 color: Theme.Palette.ink)
         let subtitle = Theme.label(
             "\(item.courseName), \(Self.dateText(item.date))"

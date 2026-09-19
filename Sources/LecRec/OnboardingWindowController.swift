@@ -16,7 +16,7 @@ final class OnboardingWindowController: NSWindowController {
     var onFinish: ((Settings) -> Void)?
 
     private let container = NSView()
-    private let titleLabel = Theme.label("", font: .systemFont(ofSize: 17, weight: .semibold))
+    private let titleLabel = Theme.label("", font: Theme.Font.of(17, .semibold))
     private let bodyLabel = Theme.label("", font: Theme.Font.body, color: .secondaryLabelColor, lines: 0)
     private let content = NSStackView()
     private let primaryButton = NSButton()

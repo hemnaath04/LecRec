@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings = Settings.load()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Theme.Typeface.register()   // before any view builds a font
         AppMenu.install()   // without this, Command V does nothing in any field
         Notifier.requestAuthorization()
 

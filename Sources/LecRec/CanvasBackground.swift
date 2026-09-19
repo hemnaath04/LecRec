@@ -15,8 +15,8 @@ final class CanvasBackgroundView: NSView {
 
         // Translucent tint rather than a solid fill, so the desktop reads through
         // while text keeps its contrast.
-        let top = NSColor(srgbRed: 0.055, green: 0.055, blue: 0.065, alpha: 0.80)
-        let bottom = NSColor(srgbRed: 0.078, green: 0.078, blue: 0.094, alpha: 0.88)
+        let top = NSColor(srgbRed: 0.118, green: 0.161, blue: 0.063, alpha: 0.86)
+        let bottom = NSColor(srgbRed: 0.075, green: 0.106, blue: 0.039, alpha: 0.93)
         if let gradient = NSGradient(starting: top, ending: bottom) {
             gradient.draw(in: bounds, angle: -90)
         }
@@ -25,10 +25,11 @@ final class CanvasBackgroundView: NSView {
         context.saveGState()
         let origin = CGPoint(x: bounds.minX + bounds.width * 0.22, y: bounds.maxY - 90)
         let radius = max(bounds.width, bounds.height) * 0.55
+        // The leaf green from the install window, as a wash behind the hero.
         let colors = [
-            Theme.Palette.record.withAlphaComponent(0.085).cgColor,
-            Theme.Palette.record.withAlphaComponent(0.028).cgColor,
-            Theme.Palette.record.withAlphaComponent(0.0).cgColor,
+            Theme.Palette.leaf.withAlphaComponent(0.14).cgColor,
+            Theme.Palette.leaf.withAlphaComponent(0.045).cgColor,
+            Theme.Palette.leaf.withAlphaComponent(0.0).cgColor,
         ] as CFArray
         if let space = CGColorSpace(name: CGColorSpace.sRGB),
            let bloom = CGGradient(colorsSpace: space, colors: colors, locations: [0, 0.45, 1]) {
@@ -40,10 +41,10 @@ final class CanvasBackgroundView: NSView {
 
         // A second, cooler bloom bottom right keeps the field from feeling lopsided.
         context.saveGState()
-        let cool = NSColor(srgbRed: 0.369, green: 0.620, blue: 1.0, alpha: 1)
+        let cool = Theme.Palette.leafDeep
         let coolOrigin = CGPoint(x: bounds.maxX - bounds.width * 0.08, y: bounds.minY + 40)
         let coolColors = [
-            cool.withAlphaComponent(0.05).cgColor,
+            cool.withAlphaComponent(0.20).cgColor,
             cool.withAlphaComponent(0.0).cgColor,
         ] as CFArray
         if let space = CGColorSpace(name: CGColorSpace.sRGB),

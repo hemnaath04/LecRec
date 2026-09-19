@@ -268,7 +268,7 @@ final class MainWindowController: NSWindowController {
 
         let brand = NSStackView(views: [
             Theme.appIcon(size: 22),
-            Theme.label("LecRec", font: .systemFont(ofSize: 13.5, weight: .semibold),
+            Theme.label("LecRec", font: Theme.Font.of(13.5, .semibold),
                         color: Theme.Palette.ink),
         ])
         brand.orientation = .horizontal

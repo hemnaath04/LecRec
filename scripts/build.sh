@@ -24,6 +24,10 @@ if [ ! -f Resources/AppIcon.icns ]; then
 fi
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
+if [ -d Resources/fonts ]; then
+  cp -R Resources/fonts "$APP/Contents/Resources/fonts"
+fi
+
 # The bundled skill travels with the app so a new user needs no manual copy.
 if [ -d Resources/skills ]; then
   cp -R Resources/skills "$APP/Contents/Resources/skills"

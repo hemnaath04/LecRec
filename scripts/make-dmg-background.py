@@ -24,13 +24,15 @@ PLATE = (62, 92, 22)
 INK = (255, 255, 255)
 INK_SOFT = (234, 246, 214)
 
-HELV = "/System/Library/Fonts/HelveticaNeue.ttc"
+INTER = str(ROOT / "Resources" / "fonts")
 HAND = "/System/Library/Fonts/Supplemental/Bradley Hand Bold.ttf"
 
 
 def helv(size, weight="Regular"):
-    index = {"Regular": 0, "Bold": 1, "Medium": 10, "Light": 7}[weight]
-    return ImageFont.truetype(HELV, size * S, index=index)
+    """Inter, the same family the app ships, so install and app agree."""
+    face = {"Regular": "Regular", "Bold": "Bold",
+            "Medium": "Medium", "Light": "Regular"}[weight]
+    return ImageFont.truetype(f"{INTER}/Inter-{face}.ttf", round(size * S))
 
 
 def hand(size):

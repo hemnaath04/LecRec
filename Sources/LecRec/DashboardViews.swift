@@ -140,9 +140,9 @@ final class SidebarItem: NSView {
     init(title: String, subtitle: String, accent: NSColor?, selected isSelected: Bool,
          actionTitle: String? = nil) {
         selected = isSelected
-        titleLabel = Theme.label(title, font: .systemFont(ofSize: 13.5, weight: .semibold))
+        titleLabel = Theme.label(title, font: Theme.Font.of(13.5, .semibold))
         subtitleLabel = Theme.label(subtitle, font: Theme.Font.rowMeta)
-        actionLabel = Theme.label(actionTitle ?? "", font: .systemFont(ofSize: 10, weight: .semibold),
+        actionLabel = Theme.label(actionTitle ?? "", font: Theme.Font.of(10, .semibold),
                                   tracking: 0.9)
         dotView = accent.map { Theme.dot($0, size: 7) }
         super.init(frame: .zero)
