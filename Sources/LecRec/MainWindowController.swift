@@ -267,16 +267,9 @@ final class MainWindowController: NSWindowController {
         }
 
         let brand = NSStackView(views: [
-            { let dot = NSView()
-              dot.wantsLayer = true
-              dot.layer?.cornerRadius = 5
-              dot.layer?.cornerCurve = .continuous
-              dot.layer?.backgroundColor = Theme.Palette.record.cgColor
-              dot.translatesAutoresizingMaskIntoConstraints = false
-              dot.widthAnchor.constraint(equalToConstant: 17).isActive = true
-              dot.heightAnchor.constraint(equalToConstant: 17).isActive = true
-              return dot }(),
-            Theme.label("LecRec", font: .systemFont(ofSize: 13.5, weight: .semibold), color: Theme.Palette.ink),
+            Theme.appIcon(size: 22),
+            Theme.label("LecRec", font: .systemFont(ofSize: 13.5, weight: .semibold),
+                        color: Theme.Palette.ink),
         ])
         brand.orientation = .horizontal
         brand.spacing = 9

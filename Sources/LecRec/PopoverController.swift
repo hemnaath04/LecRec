@@ -123,10 +123,11 @@ final class PopoverController: NSViewController {
                                               target: self, action: #selector(openSettings))
         let quitButton = Theme.iconButton(symbol: "power", tooltip: "Quit LecRec",
                                           target: NSApp, action: #selector(NSApplication.terminate(_:)))
-        let header = NSStackView(views: [title, NSView(), settingsButton, quitButton])
+        let header = NSStackView(views: [Theme.appIcon(size: 18), title,
+                                         NSView(), settingsButton, quitButton])
         header.orientation = .horizontal
         header.alignment = .centerY
-        header.spacing = 2
+        header.spacing = 6
         header.distribution = .fill
         return header
     }

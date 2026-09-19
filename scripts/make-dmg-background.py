@@ -1,99 +1,92 @@
 #!/usr/bin/env python3
-"""Draws the DMG install window background.
+"""Draws the DMG install window background at Retina resolution.
 
-Green palette taken from the reference design: a vivid leaf green field with
-darker diagonal streaks, and hand-drawn guidance so the drag is obvious.
+Everything is rendered at 2x and the 1x version is downsampled from it, then the
+two are combined into a multi-resolution TIFF. A plain 1x PNG gets upscaled by
+Finder on a Retina display, which is what made the first version look soft.
 """
 import math
 import pathlib
 import random
+import subprocess
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "build" / "dmg"
 W, H = 720, 480
+S = 2                      # render scale
 
-LEAF_LIGHT = (150, 206, 44)
-LEAF_MID = (124, 181, 24)
-LEAF_DEEP = (96, 148, 16)
-PANEL = (74, 103, 33)
+LEAF_LIGHT = (156, 212, 48)
+LEAF_MID = (126, 184, 26)
+LEAF_DEEP = (88, 138, 14)
+PLATE = (62, 92, 22)
 INK = (255, 255, 255)
-INK_SOFT = (232, 243, 210)
+INK_SOFT = (234, 246, 214)
 
-FONTS = "/System/Library/Fonts/Supplemental/"
+HELV = "/System/Library/Fonts/HelveticaNeue.ttc"
+HAND = "/System/Library/Fonts/Supplemental/Bradley Hand Bold.ttf"
+
+
+def helv(size, weight="Regular"):
+    index = {"Regular": 0, "Bold": 1, "Medium": 10, "Light": 7}[weight]
+    return ImageFont.truetype(HELV, size * S, index=index)
 
 
 def hand(size):
-    return ImageFont.truetype(FONTS + "Bradley Hand Bold.ttf", size)
+    return ImageFont.truetype(HAND, size * S)
 
 
-def clean(size, bold=True):
-    return ImageFont.truetype(FONTS + f"Arial{' Bold' if bold else ''}.ttf", size)
+def px(value):
+    return value * S
 
 
 def field():
-    """Vivid green with diagonal streaks, echoing the reference backdrop."""
-    base = Image.new("RGB", (W, H), LEAF_MID)
+    base = Image.new("RGB", (px(W), px(H)), LEAF_MID)
     draw = ImageDraw.Draw(base)
+    for y in range(px(H)):
+        t = y / px(H)
+        draw.line([(0, y), (px(W), y)], fill=tuple(
+            round(LEAF_LIGHT[i] + (LEAF_DEEP[i] - LEAF_LIGHT[i]) * t) for i in range(3)))
 
-    for y in range(H):
-        t = y / H
-        colour = tuple(round(LEAF_LIGHT[i] + (LEAF_DEEP[i] - LEAF_LIGHT[i]) * t) for i in range(3))
-        draw.line([(0, y), (W, y)], fill=colour)
-
-    streaks = Image.new("RGBA", (W * 2, H * 2), (0, 0, 0, 0))
+    streaks = Image.new("RGBA", (px(W) * 2, px(H) * 2), (0, 0, 0, 0))
     sd = ImageDraw.Draw(streaks)
-    rng = random.Random(7)
-    for _ in range(46):
-        x = rng.randint(-H, W * 2)
-        width = rng.randint(6, 30)
-        shade = rng.choice([(255, 255, 255, 16), (60, 96, 10, 26), (170, 220, 70, 20)])
-        sd.line([(x, 0), (x - H * 2, H * 2)], fill=shade, width=width)
-    streaks = streaks.filter(ImageFilter.GaussianBlur(7)).resize((W, H), Image.LANCZOS)
+    rng = random.Random(11)
+    for _ in range(54):
+        x = rng.randint(-px(H), px(W) * 2)
+        sd.line([(x, 0), (x - px(H) * 2, px(H) * 2)],
+                fill=rng.choice([(255, 255, 255, 15), (52, 86, 8, 24), (176, 224, 78, 18)]),
+                width=rng.randint(px(5), px(26)))
+    streaks = streaks.filter(ImageFilter.GaussianBlur(px(6))).resize((px(W), px(H)), Image.LANCZOS)
     base = Image.alpha_composite(base.convert("RGBA"), streaks)
 
-    # A soft vignette keeps attention on the middle.
-    vignette = Image.new("L", (W, H), 0)
+    vignette = Image.new("L", (px(W), px(H)), 0)
     ImageDraw.Draw(vignette).ellipse(
-        [-W * 0.25, -H * 0.35, W * 1.25, H * 1.35], fill=255)
-    vignette = vignette.filter(ImageFilter.GaussianBlur(110))
-    dark = Image.new("RGBA", (W, H), (40, 62, 6, 120))
-    base = Image.composite(base, Image.alpha_composite(base, dark), vignette)
-    return base
+        [-px(W) * 0.22, -px(H) * 0.32, px(W) * 1.22, px(H) * 1.32], fill=255)
+    vignette = vignette.filter(ImageFilter.GaussianBlur(px(95)))
+    dark = Image.new("RGBA", (px(W), px(H)), (34, 56, 4, 125))
+    return Image.composite(base, Image.alpha_composite(base, dark), vignette)
 
 
-def wobble(points, amount, seed):
-    """Nudges a path so a drawn line never looks machine-straight."""
+def ink_stroke(draw, points, width, colour, seed):
+    """Two offset passes with wobble, so a line reads as ink not as a vector."""
     rng = random.Random(seed)
-    return [(x + rng.uniform(-amount, amount), y + rng.uniform(-amount, amount))
-            for x, y in points]
+    jittered = [(x + rng.uniform(-px(0.7), px(0.7)), y + rng.uniform(-px(0.7), px(0.7)))
+                for x, y in points]
+    draw.line(jittered, fill=colour, width=width, joint="curve")
+    draw.line([(x + px(0.6), y + px(0.7)) for x, y in jittered],
+              fill=colour[:3] + (90,), width=max(1, width - px(1)), joint="curve")
+    return jittered
 
 
-def curve(draw, start, end, lift, width, colour, seed):
-    points = []
-    for step in range(61):
-        t = step / 60
-        # Quadratic bezier through a lifted control point.
-        cx = (start[0] + end[0]) / 2
-        cy = (start[1] + end[1]) / 2 - lift
-        x = (1 - t) ** 2 * start[0] + 2 * (1 - t) * t * cx + t ** 2 * end[0]
-        y = (1 - t) ** 2 * start[1] + 2 * (1 - t) * t * cy + t ** 2 * end[1]
-        points.append((x, y))
-    points = wobble(points, 1.1, seed)
-    # Two passes with slight offset reads as ink rather than a vector stroke.
-    draw.line(points, fill=colour, width=width, joint="curve")
-    draw.line([(x + 0.8, y + 0.8) for x, y in points],
-              fill=colour[:3] + (110,), width=max(1, width - 2), joint="curve")
-    return points
-
-
-def arrowhead(draw, tip, previous, size, colour, seed):
-    angle = math.atan2(tip[1] - previous[1], tip[0] - previous[0])
-    for spread in (2.5, -2.5):
-        end = (tip[0] - size * math.cos(angle + spread / 3.4),
-               tip[1] - size * math.sin(angle + spread / 3.4))
-        draw.line(wobble([tip, end], 0.9, seed), fill=colour, width=5, joint="curve")
+def bezier(start, end, lift, steps=90):
+    cx, cy = (start[0] + end[0]) / 2, (start[1] + end[1]) / 2 - lift
+    out = []
+    for step in range(steps + 1):
+        t = step / steps
+        out.append(((1 - t) ** 2 * start[0] + 2 * (1 - t) * t * cx + t ** 2 * end[0],
+                    (1 - t) ** 2 * start[1] + 2 * (1 - t) * t * cy + t ** 2 * end[1]))
+    return out
 
 
 def build():
@@ -101,42 +94,67 @@ def build():
     canvas = field()
     draw = ImageDraw.Draw(canvas, "RGBA")
 
-    # Title block, top left, echoing the reference's eyebrow plus bold title.
-    draw.text((52, 40), "LECTURE RECORD", font=clean(12), fill=INK_SOFT + (210,))
-    draw.text((50, 58), "LecRec", font=clean(42), fill=INK)
-    draw.text((54, 112), "Record a lecture, get the note.",
-              font=clean(14, bold=False), fill=INK_SOFT + (235,))
+    # Title block. Tight tracking on the eyebrow, generous weight on the name.
+    eyebrow = "L E C T U R E   R E C O R D"
+    draw.text((px(52), px(44)), eyebrow, font=helv(10, "Medium"), fill=INK_SOFT + (205,))
+    draw.text((px(50), px(62)), "LecRec", font=helv(46, "Bold"), fill=INK)
+    draw.text((px(53), px(122)), "Record a lecture, get the note.",
+              font=helv(15, "Light"), fill=INK_SOFT + (238,))
 
-    # The two drop targets sit on soft plates so the icons read on green.
+    # Plates behind the drop targets, with a soft drop shadow.
     for cx in (176, 544):
-        plate = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
-        ImageDraw.Draw(plate).rounded_rectangle(
-            [0, 0, 199, 199], radius=46, fill=PANEL + (92,))
-        plate = plate.filter(ImageFilter.GaussianBlur(1.2))
-        canvas.alpha_composite(plate, (cx - 100, 188))
+        shadow = Image.new("RGBA", (px(220), px(220)), (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).rounded_rectangle(
+            [px(10), px(14), px(210), px(214)], radius=px(48), fill=(20, 38, 2, 70))
+        shadow = shadow.filter(ImageFilter.GaussianBlur(px(9)))
+        canvas.alpha_composite(shadow, (px(cx - 110), px(184)))
 
-    # Hand-drawn arrow between them.
-    ink = INK + (240,)
-    path = curve(draw, (268, 268), (450, 268), lift=54, width=6, colour=ink, seed=3)
-    arrowhead(draw, path[-1], path[-6], 22, ink, seed=5)
+        plate = Image.new("RGBA", (px(200), px(200)), (0, 0, 0, 0))
+        pd = ImageDraw.Draw(plate)
+        pd.rounded_rectangle([0, 0, px(200) - 1, px(200) - 1], radius=px(46),
+                             fill=PLATE + (96,))
+        pd.rounded_rectangle([0, 0, px(200) - 1, px(200) - 1], radius=px(46),
+                             outline=(255, 255, 255, 40), width=px(1))
+        canvas.alpha_composite(plate, (px(cx - 100), px(188)))
 
-    draw.text((312, 176), "drag me", font=hand(30), fill=ink)
-    draw.text((330, 214), "over here", font=hand(24), fill=INK_SOFT + (225,))
+    # The arrow, drawn over the gap between the plates.
+    white = INK + (245,)
+    path = bezier((px(272), px(276)), (px(448), px(276)), lift=px(50))
+    drawn = ink_stroke(draw, path, px(5), white, seed=4)
+    tip, prev = drawn[-1], drawn[-8]
+    angle = math.atan2(tip[1] - prev[1], tip[0] - prev[0])
+    for spread in (0.72, -0.72):
+        ink_stroke(draw, [tip, (tip[0] - px(20) * math.cos(angle + spread),
+                                tip[1] - px(20) * math.sin(angle + spread))],
+                   px(5), white, seed=9)
 
-    # No labels drawn here: Finder writes the icon names itself, directly under
-    # each icon, and anything drawn there would collide with them.
+    draw.text((px(304), px(172)), "drag me", font=hand(31), fill=white)
+    draw.text((px(326), px(212)), "over here", font=hand(23), fill=INK_SOFT + (222,))
 
-    # The Gatekeeper note, which is the one thing that trips up a first launch.
-    draw.text((50, 418), "first launch gets blocked, that is expected",
-              font=hand(19), fill=INK_SOFT + (215,))
-    draw.text((50, 442), "System Settings > Privacy & Security > Open Anyway",
-              font=hand(16), fill=INK_SOFT + (180,))
+    # Finder draws the icon names itself, so nothing is painted under the icons.
 
-    out = OUT / "background.png"
-    canvas.convert("RGB").save(out)
-    canvas.convert("RGB").resize((W * 2, H * 2), Image.LANCZOS).save(OUT / "background@2x.png")
-    print(f"wrote {out}")
-    return out
+    # Gatekeeper note, the one thing that trips up a first launch.
+    note = Image.new("RGBA", (px(W), px(H)), (0, 0, 0, 0))
+    nd = ImageDraw.Draw(note)
+    nd.rounded_rectangle([px(40), px(404), px(560), px(462)], radius=px(14),
+                         fill=(24, 44, 4, 70))
+    canvas.alpha_composite(note)
+    draw.text((px(56), px(412)), "first launch gets blocked, that is expected",
+              font=hand(18), fill=INK_SOFT + (232,))
+    draw.text((px(56), px(436)), "System Settings  >  Privacy & Security  >  Open Anyway",
+              font=helv(11, "Medium"), fill=INK_SOFT + (190,))
+
+    flat = canvas.convert("RGB")
+    at2x = OUT / "background@2x.png"
+    at1x = OUT / "background.png"
+    flat.save(at2x)
+    flat.resize((W, H), Image.LANCZOS).save(at1x)
+
+    # Finder reads a multi-resolution TIFF and picks the right one per display.
+    tiff = OUT / "background.tiff"
+    subprocess.run(["tiffutil", "-cathidpicheck", str(at1x), str(at2x), "-out", str(tiff)],
+                   check=True, capture_output=True)
+    print(f"wrote {tiff} ({tiff.stat().st_size // 1024} KB), plus 1x and 2x PNGs")
 
 
 if __name__ == "__main__":

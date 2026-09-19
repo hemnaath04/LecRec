@@ -106,6 +106,23 @@ enum Theme {
         return view
     }
 
+    /// The real app icon, for use inside the app. A flat coloured square stood in
+    /// for this and looked like a placeholder, because it was one.
+    static func appIcon(size: CGFloat) -> NSImageView {
+        let view = NSImageView()
+        view.image = NSApp.applicationIconImage
+            ?? Bundle.main.url(forResource: "AppIcon", withExtension: "icns")
+                .flatMap { NSImage(contentsOf: $0) }
+        view.imageScaling = .scaleProportionallyUpOrDown
+        view.wantsLayer = true
+        // The icns already carries the rounded tile, so no extra masking.
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.widthAnchor.constraint(equalToConstant: size).isActive = true
+        view.heightAnchor.constraint(equalToConstant: size).isActive = true
+        view.setAccessibilityLabel("LecRec")
+        return view
+    }
+
     /// A small coloured dot, the only decoration the design uses.
     static func dot(_ color: NSColor, size: CGFloat = 6) -> NSView {
         let view = NSView()

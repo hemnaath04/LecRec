@@ -29,7 +29,7 @@ rm -rf "$STAGING" "$DMG" build/rw.dmg
 mkdir -p "$STAGING/.background"
 cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
-cp build/dmg/background.png "$STAGING/.background/background.png"
+cp build/dmg/background.tiff "$STAGING/.background/background.tiff"
 
 # A read-write image first, so Finder can be told how to present it, then
 # converted to a compressed read-only image for distribution.
@@ -54,7 +54,7 @@ tell application "Finder"
     set arrangement of opts to not arranged
     set icon size of opts to 112
     set text size of opts to 12
-    set background picture of opts to file ".background:background.png"
+    set background picture of opts to file ".background:background.tiff"
     set position of item "LecRec.app" of container window to {176, 288}
     set position of item "Applications" of container window to {544, 288}
     close
