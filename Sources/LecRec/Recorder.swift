@@ -30,6 +30,16 @@ final class Recorder {
     private let engine = AVAudioEngine()
     private var file: AVAudioFile?
     private var timer: Timer?
+    private var configObserver: NSObjectProtocol?
+    private var requestedDeviceUID: String?
+    private var currentDestination: URL?
+    /// Extra files written after a mid-lecture device change, in order.
+    private(set) var continuationFiles: [URL] = []
+
+    /// Fires when the input device disappears mid-recording, which is the
+    /// realistic failure for a Continuity microphone: the phone locks, wanders
+    /// out of range, or takes a call.
+    var onInputChanged: ((String) -> Void)?
     private var startedAt: Date?
     private(set) var outputURL: URL?
     private(set) var isRecording = false
@@ -147,6 +157,10 @@ final class Recorder {
             throw RecorderError.engineFailed(error.localizedDescription)
         }
 
+        requestedDeviceUID = deviceUID
+        currentDestination = url
+        observeConfigurationChanges()
+
         startedAt = Date()
         isRecording = true
         let tick = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -157,17 +171,99 @@ final class Recorder {
         timer = tick
     }
 
+    /// AVAudioEngine posts this when the input hardware changes underneath it,
+    /// including when a Continuity microphone vanishes. Without handling it the
+    /// engine keeps running and writes silence, which is the worst outcome:
+    /// the recording looks healthy and contains nothing.
+    private func observeConfigurationChanges() {
+        guard configObserver == nil else { return }
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine, queue: .main) { [weak self] _ in
+                self?.handleConfigurationChange()
+            }
+    }
+
+    private func handleConfigurationChange() {
+        guard isRecording else { return }
+        let wanted = requestedDeviceUID.flatMap { AudioDevices.device(uid: $0) }
+        let stillPresent = wanted != nil
+        Diagnostics.log("input configuration changed, requested device present: \(stillPresent)")
+
+        // Close the current segment cleanly, then continue into a new one.
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        file = nil
+
+        let fallback = stillPresent ? wanted : AudioDevices.defaultInput()
+        let name = fallback?.name ?? "the system default input"
+
+        guard let destination = currentDestination else { return }
+        let index = continuationFiles.count + 2
+        let next = destination.deletingPathExtension()
+            .appendingPathExtension("part\(index).caf")
+
+        do {
+            try startSegment(deviceID: fallback?.id, to: next)
+            continuationFiles.append(next)
+            onInputChanged?(stillPresent
+                ? "Input reconnected, continuing on \(name)."
+                : "Input was lost, continuing on \(name).")
+            Diagnostics.log("continuing recording into \(next.lastPathComponent) on \(name)")
+        } catch {
+            Diagnostics.log("FAILED to continue after input change: \(error.localizedDescription)")
+            onInputChanged?("Recording stopped: the input device was lost.")
+            isRecording = false
+        }
+    }
+
+    /// Opens a new file and restarts capture, used both for the first segment
+    /// and for continuing after a device change.
+    private func startSegment(deviceID: AudioDeviceID?, to url: URL) throws {
+        if let deviceID { try setInputDevice(deviceID) }
+        let input = engine.inputNode
+        let format = input.inputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw RecorderError.engineFailed("input reported \(format.sampleRate) Hz")
+        }
+        sampleRate = format.sampleRate
+
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: format.sampleRate,
+            AVNumberOfChannelsKey: format.channelCount,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+        file = try AVAudioFile(forWriting: url, settings: settings,
+                               commonFormat: .pcmFormatFloat32, interleaved: false)
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
+            guard let self else { return }
+            try? self.file?.write(from: buffer)
+            self.framesWritten += AVAudioFramePosition(buffer.frameLength)
+            let level = Recorder.normalizedLevel(buffer)
+            DispatchQueue.main.async { self.onLevel?(level) }
+        }
+        engine.prepare()
+        try engine.start()
+    }
+
     /// Stops capture and returns the finalised file plus its true duration.
     @discardableResult
-    func stop() -> (url: URL, duration: TimeInterval)? {
+    func stop() -> (url: URL, duration: TimeInterval, segments: [URL])? {
         guard isRecording else { return nil }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         timer?.invalidate()
         timer = nil
         isRecording = false
+        if let configObserver {
+            NotificationCenter.default.removeObserver(configObserver)
+            self.configObserver = nil
+        }
 
-        let result = outputURL.map { (url: $0, duration: duration) }
+        let result = outputURL.map { (url: $0, duration: duration, segments: continuationFiles) }
         file = nil          // releasing the AVAudioFile finalises the header
         startedAt = nil
         return result

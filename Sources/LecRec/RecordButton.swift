@@ -51,11 +51,14 @@ final class RecordButton: NSControl {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// Overrides the idle wording, for reuse outside the record flow.
+    var idleTitle = "Start recording"
+
     func apply(_ newState: State) {
         buttonState = newState
         switch newState {
         case .idle:
-            titleLabel.stringValue = "Start recording"
+            titleLabel.stringValue = idleTitle
             titleLabel.textColor = NSColor(srgbRed: 0.09, green: 0.13, blue: 0.04, alpha: 1)
             dot.isHidden = true
             spinner.stopAnimation(nil)

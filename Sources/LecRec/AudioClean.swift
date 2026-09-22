@@ -1,6 +1,33 @@
 import Foundation
 
 enum AudioClean {
+    /// Joins a recording that was split by a mid-lecture input change back into
+    /// one file. Without this the continuation segments are orphaned and the
+    /// note is silently built from only the first part.
+    static func join(_ parts: [URL], into output: URL,
+                     log: ((String) -> Void)?) async throws -> URL {
+        let present = parts.filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard present.count > 1 else { return present.first ?? parts[0] }
+
+        let ffmpeg = try Shell.require("ffmpeg", hint: "brew install ffmpeg")
+        let list = output.deletingLastPathComponent()
+            .appendingPathComponent("segments-\(UUID().uuidString).txt")
+        let body = present
+            .map { "file '\($0.path.replacingOccurrences(of: "'", with: "'\\''"))'" }
+            .joined(separator: "\n")
+        try body.write(to: list, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: list) }
+
+        log?("Joining \(present.count) recording segments after an input change")
+        // Re-encode rather than stream copy: segments can differ in sample rate
+        // when the device changes, and a copy would produce a broken file.
+        try await Shell.run(ffmpeg, [
+            "-nostdin", "-y", "-f", "concat", "-safe", "0", "-i", list.path,
+            "-ac", "1", output.path,
+        ], log: log)
+        return output
+    }
+
     /// High-pass removes HVAC rumble, afftdn pulls the noise floor down, and
     /// speechnorm lifts quiet speech without amplifying the silence between
     /// sentences. Tuned for a back-row recording off a laptop mic.

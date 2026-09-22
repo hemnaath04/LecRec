@@ -274,6 +274,12 @@ final class PopoverController: NSViewController {
         recorder.onTick = { [weak self] elapsed in
             self?.clockLabel.stringValue = Self.clock(elapsed)
         }
+        recorder.onInputChanged = { [weak self] message in
+            guard let self else { return }
+            self.hintLabel.stringValue = message
+            self.hintLabel.textColor = Theme.Palette.warn
+            Notifier.post(title: "Microphone changed mid-recording", body: message)
+        }
         watchdog.onChange = { [weak self] warning in
             guard let self, self.recorder.isRecording else { return }
             self.hintLabel.stringValue = warning
@@ -391,6 +397,12 @@ final class PopoverController: NSViewController {
             audioDuration: finished.duration,
             deckPath: nil)
 
+        ProcessingCenter.shared.observe("popover") { [weak self] update in
+            guard let self, let update else { return }
+            self.currentStage = update.stage
+            self.stages.advance(to: update.stage, detail: update.detail)
+        }
+
         let pipeline = Pipeline(settings: settings)
         pipeline.onStage = { [weak self] stage, detail in
             guard let self else { return }
@@ -401,29 +413,38 @@ final class PopoverController: NSViewController {
 
         Task { @MainActor in
             do {
-                let note = try await pipeline.run(lecture: lecture)
-                self.lastNoteURL = note
-                self.openNoteButton.isHidden = false
-                self.stages.finish(publishedTo: self.settings.destination.label)
+                // A dropout splits the capture; join it before anything else sees it.
+                var lecture = lecture
+                if !finished.segments.isEmpty {
+                    let joined = finished.url.deletingPathExtension()
+                        .appendingPathExtension("joined.caf")
+                    if let merged = try? await AudioClean.join(
+                        [finished.url] + finished.segments, into: joined, log: nil) {
+                        lecture.audioURL = merged
+                        Diagnostics.log("joined \(finished.segments.count + 1) segments into \(merged.lastPathComponent)")
+                    }
+                }
+                let pending = try await pipeline.transcribe(lecture: lecture)
+                PendingStore.add(pending)
+                self.sleepGuard.end()
+                self.stages.advance(to: .awaitingDeck,
+                                    detail: "Attach your deck, then start the write-up")
                 self.apply(phase: .finished)
                 self.topicField.stringValue = ""
-                self.hintLabel.stringValue = "\(note.lastPathComponent) is ready."
-                self.hintLabel.textColor = Theme.Palette.muted
+                self.hintLabel.stringValue = "Transcribed, \(pending.coverageText). Open LecRec to add your slide deck."
+                self.hintLabel.textColor = Theme.Palette.ink
                 self.onLibraryChanged?()
-                self.sleepGuard.end()
-                Notifier.post(title: "Lecture note ready",
-                              body: "\(course.name), \(Self.clock(finished.duration)) recorded.")
+                Notifier.post(title: "\(pending.courseName) is transcribed",
+                              body: "Attach your slide deck in LecRec, then start the write-up.")
             } catch {
+                self.sleepGuard.end()
                 self.stages.markFailure(at: self.currentStage, message: error.localizedDescription)
                 self.apply(phase: .failed)
                 self.fail(error.localizedDescription)
-                // The audio survives regardless, which is the whole point of disk first.
                 self.lastNoteURL = finished.url
                 self.openNoteButton.title = "Open recording folder"
                 self.openNoteButton.isHidden = false
-                self.onLibraryChanged?()
-                self.sleepGuard.end()
-                Notifier.post(title: "Lecture processing failed",
+                Notifier.post(title: "Transcription failed",
                               body: "Your audio is safe at \(finished.url.lastPathComponent).")
             }
         }

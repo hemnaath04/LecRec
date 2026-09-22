@@ -23,6 +23,8 @@ final class MainWindowController: NSWindowController {
     private let courseChip = CourseChip(frame: .zero)
     private let listRange = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.faint)
     private var rows = NSStackView()
+    private let pendingCard = PendingCard(frame: .zero)
+    private let progress = ProgressStrip(frame: .zero)
 
     var onRecordPressed: ((Course) -> Void)?
     var onOpenSettings: (() -> Void)?
@@ -106,6 +108,7 @@ final class MainWindowController: NSWindowController {
         content.edgeInsets = NSEdgeInsets(top: 52, left: 56, bottom: 40, right: 56)
         content.translatesAutoresizingMaskIntoConstraints = false
         buildHero()
+        buildPendingAndProgress()
         buildList()
 
         let flipped = FlippedView()
@@ -178,6 +181,49 @@ final class MainWindowController: NSWindowController {
         ])
     }
 
+    /// The write-up handoff and the live progress bar, both hidden until they
+    /// have something to say, so a quiet dashboard stays quiet.
+    private func buildPendingAndProgress() {
+        pendingCard.onStart = { [weak self] item in
+            guard let self else { return }
+            do {
+                try ProcessingCenter.shared.startWriteUp(item, settings: self.settings)
+            } catch {
+                self.progress.update(stage: "Busy", detail: error.localizedDescription, fraction: 0)
+            }
+        }
+        pendingCard.onChanged = { [weak self] in self?.reload() }
+
+        content.addArrangedSubview(pendingCard)
+        content.setCustomSpacing(16, after: pendingCard)
+        content.addArrangedSubview(progress)
+        content.setCustomSpacing(30, after: progress)
+
+        NSLayoutConstraint.activate([
+            pendingCard.widthAnchor.constraint(equalTo: content.widthAnchor, constant: -112),
+            progress.widthAnchor.constraint(equalTo: content.widthAnchor, constant: -112),
+        ])
+        pendingCard.isHidden = true
+        progress.isHidden = true
+
+        // One observer for the whole window: the bar follows whatever is running.
+        ProcessingCenter.shared.observe("dashboard") { [weak self] update in
+            guard let self else { return }
+            if let update {
+                self.progress.isHidden = false
+                self.progress.update(stage: update.stage.rawValue,
+                                     detail: update.detail, fraction: update.fraction)
+                self.pendingCard.isHidden = true
+            } else {
+                self.progress.isHidden = true
+                self.reload()
+            }
+        }
+        ProcessingCenter.shared.onComplete("dashboard") { [weak self] _, _ in
+            self?.reload()
+        }
+    }
+
     private func buildList() {
         let heading = Theme.label("Recent lectures", font: Theme.Font.sectionTitle, color: Theme.Palette.ink)
         let header = NSStackView(views: [heading, NSView(), listRange])
@@ -209,6 +255,13 @@ final class MainWindowController: NSWindowController {
 
         eyebrowLabel.stringValue = Self.termLabel()
         applyHero(stats: stats, visible: visible)
+
+        if let waiting = PendingStore.first, !ProcessingCenter.shared.isRunning {
+            pendingCard.configure(waiting)
+            pendingCard.isHidden = false
+        } else {
+            pendingCard.isHidden = true
+        }
 
         listRange.stringValue = visible.isEmpty ? "" : "\(visible.count) in the library"
         rows.arrangedSubviews.forEach {

@@ -29,6 +29,7 @@ enum PipelineStage: String {
     case transcribing = "Transcribing"
     case checking = "Checking coverage"
     case recalling = "Recalling earlier lectures"
+    case awaitingDeck = "Waiting for your slide deck"
     case reasoning = "Building the note"
     case publishing = "Publishing"
     case done = "Done"
@@ -77,7 +78,10 @@ final class Pipeline {
         self.settings = settings
     }
 
-    func run(lecture: Lecture) async throws -> URL {
+    /// Phase one, automatic when recording stops: make a transcript and stop.
+    /// The note is deliberately not written yet, so the slide deck can still be
+    /// attached before the expensive and hard-to-redo step.
+    func transcribe(lecture: Lecture) async throws -> PendingLecture {
         let dir = URL(fileURLWithPath: settings.notesRoot)
             .appendingPathComponent(lecture.course.slug, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -85,43 +89,64 @@ final class Pipeline {
         let cleaned = dir.appendingPathComponent("audio/\(lecture.baseName)-clean.wav")
         let srt = dir.appendingPathComponent("transcripts/\(lecture.baseName).srt")
 
-        // 1. Clean
         advance(.cleaning, "Reducing room noise and lifting quiet speech")
         try FileManager.default.createDirectory(
             at: cleaned.deletingLastPathComponent(), withIntermediateDirectories: true)
         try await AudioClean.run(input: lecture.audioURL, output: cleaned,
                                  denoise: settings.denoise, log: onLog)
 
-        // 2. Transcribe
         advance(.transcribing, "Running \(settings.transcriptionModel.label) on device")
         try FileManager.default.createDirectory(
             at: srt.deletingLastPathComponent(), withIntermediateDirectories: true)
         try await Transcriber.run(input: cleaned, outputSRT: srt,
                                   model: settings.transcriptionModel, log: onLog)
 
-        // 3. Coverage
         advance(.checking, "Comparing transcript length against the recording")
         let report = CoverageReport(
             audioDuration: lecture.audioDuration,
             transcriptEnd: SRT.lastTimestamp(of: srt) ?? 0)
         onLog?(report.summary)
 
-        // 4. Cross-check and write the note, via Claude Code and the course-notes skill
+        // The cleaned copy is only an input to transcription, and it is large.
+        try? FileManager.default.removeItem(at: cleaned)
+
+        return PendingLecture(
+            courseSlug: lecture.course.slug,
+            courseName: lecture.course.name,
+            notionCourse: lecture.course.notionCourse,
+            date: lecture.date,
+            slug: lecture.slug,
+            audioPath: lecture.audioURL.path,
+            transcriptPath: srt.path,
+            audioDuration: lecture.audioDuration,
+            coverage: report.audioDuration > 0 ? report.coverage : nil,
+            deckPath: nil,
+            transcribedAt: Date())
+    }
+
+    /// Phase two, started by the user once they have decided about the deck.
+    func writeUp(_ pending: PendingLecture) async throws -> URL {
+        let lecture = pending.lecture
+        let report = CoverageReport(audioDuration: pending.audioDuration,
+                                    transcriptEnd: (pending.coverage ?? 1) * pending.audioDuration)
+
         if settings.linkPreviousLectures {
             advance(.recalling, "Reading the last \(settings.continuityLookback) notes for this course")
         }
-        advance(.reasoning, "Claude Code is cross-checking transcript, deck and notes")
+        advance(.reasoning, lecture.deckPath == nil
+                ? "Writing from the transcript alone"
+                : "Cross-checking the transcript against your deck")
+
         let runner = ClaudeRunner(settings: settings)
         let noteURL = try await runner.buildNote(
-            lecture: lecture, transcript: srt, coverage: report,
+            lecture: lecture, transcript: pending.transcriptURL, coverage: report,
             onLog: onLog, onStage: { [weak self] detail in
                 self?.advance(.reasoning, detail)
             })
 
-        // Only now that the note exists is the raw audio expendable.
         if settings.archiveAudioAfterProcessing {
             if let result = try? await AudioArchive.compressAndPrune(
-                source: lecture.audioURL, alsoRemove: [cleaned], log: onLog) {
+                source: lecture.audioURL, alsoRemove: [], log: onLog) {
                 onLog?("Kept \(result.archive.lastPathComponent), freed \(result.bytesFreed / 1_000_000) MB")
             }
         }
