@@ -35,8 +35,15 @@ fi
 
 # Ad-hoc signature. The hash changes every build, so macOS may re-ask for
 # microphone access after a rebuild. Acceptable for a personal tool.
-echo "==> codesign (ad-hoc)"
-codesign --force --sign - --identifier tech.hemnaath.lecrec \
+# A stable identity keeps the code signature constant across rebuilds, which is
+# what lets a microphone grant survive an update. Ad-hoc changes hash every time.
+SIGN_AS="${LECREC_SIGN_IDENTITY:--}"
+if [ "$SIGN_AS" = "-" ]; then
+  echo "==> codesign (ad-hoc, grant will not survive rebuilds)"
+else
+  echo "==> codesign as $SIGN_AS"
+fi
+codesign --force --sign "$SIGN_AS" --identifier tech.hemnaath.lecrec \
   --options runtime "$APP" 2>&1 | sed 's/^/    /' || true
 
 echo "==> done: $APP"

@@ -45,10 +45,44 @@ final class Recorder {
     // MARK: - Permission
 
     static func requestPermission() async -> Bool {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized: return true
-        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .audio)
-        default: return false
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        Diagnostics.log("microphone authorization status = \(describe(status))")
+        switch status {
+        case .authorized:
+            return true
+        case .notDetermined:
+            let granted = await AVCaptureDevice.requestAccess(for: .audio)
+            Diagnostics.log("microphone prompt answered: \(granted ? "granted" : "denied")")
+            return granted
+        default:
+            Diagnostics.log("microphone blocked, status \(describe(status))")
+            return false
+        }
+    }
+
+    /// Triggered once at launch. Until an app actually asks, macOS does not list
+    /// it under Privacy and Security, Microphone, and there is no way to add it
+    /// by hand: there is no plus button on that pane. An app that never asks is
+    /// therefore impossible for the user to authorise, which is what happened.
+    static func primePermissionIfNeeded() {
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else {
+            Diagnostics.log("microphone already decided: "
+                + describe(AVCaptureDevice.authorizationStatus(for: .audio)))
+            return
+        }
+        Diagnostics.log("microphone undecided at launch, asking now so the app is listed")
+        AVCaptureDevice.requestAccess(for: .audio) { granted in
+            Diagnostics.log("launch microphone prompt: \(granted ? "granted" : "denied")")
+        }
+    }
+
+    static func describe(_ status: AVAuthorizationStatus) -> String {
+        switch status {
+        case .authorized: return "authorized"
+        case .denied: return "denied"
+        case .restricted: return "restricted"
+        case .notDetermined: return "notDetermined"
+        @unknown default: return "unknown"
         }
     }
 

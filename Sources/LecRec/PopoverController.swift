@@ -11,6 +11,7 @@ final class PopoverController: NSViewController {
     private var settings: Settings
     private let recorder = Recorder()
     private let watchdog = SilenceWatchdog()
+    private let sleepGuard = SleepGuard()
 
     // Controls
     private let courseChip = CourseChip(frame: .zero)
@@ -214,7 +215,7 @@ final class PopoverController: NSViewController {
                 stages.isHidden = true
                 courseChip.isEnabled = false
                 topicField.isEnabled = true
-                hintLabel.stringValue = "Recording. You can close this window."
+                hintLabel.stringValue = "Recording. You can close this window, but do not shut the lid."
                 hintLabel.textColor = Theme.Palette.muted
             case .processing:
                 recordButton.apply(.busy)
@@ -277,7 +278,7 @@ final class PopoverController: NSViewController {
             guard let self, self.recorder.isRecording else { return }
             self.hintLabel.stringValue = warning
                 ? "Almost no sound for 20 seconds. Check the input device in Settings."
-                : "Recording. You can close this window."
+                : "Recording. You can close this window, but do not shut the lid."
             self.hintLabel.textColor = warning ? Theme.Palette.warn : Theme.Palette.muted
         }
     }
@@ -318,18 +319,22 @@ final class PopoverController: NSViewController {
     var onLibraryChanged: (() -> Void)?
 
     private func beginRecording() {
+        Diagnostics.log("beginRecording entered")
         Task { @MainActor in
             let granted = await Recorder.requestPermission()
             self.refreshPermissionState()
             guard granted else {
-                // The card is already visible with a button that goes straight there.
-                self.hintLabel.stringValue = "Grant microphone access, then press Start again."
+                Diagnostics.log("FAILED to start: microphone not granted")
+                self.hintLabel.stringValue = "Microphone access is off. Open System Settings below, then press Start again."
                 self.hintLabel.textColor = Theme.Palette.warn
                 self.permissionCard?.isHidden = false
+                Notifier.post(title: "LecRec cannot record",
+                              body: "Microphone access is off. Nothing is being recorded.")
                 return
             }
 
             guard let course = self.settings.selectedCourse else {
+                Diagnostics.log("FAILED to start: no course selected")
                 self.hintLabel.stringValue = "Add a course in Settings before recording."
                 self.hintLabel.textColor = Theme.Palette.warn
                 self.onOpenSettings?()
@@ -340,19 +345,26 @@ final class PopoverController: NSViewController {
                 .appendingPathComponent("audio/\(Self.stamp())-raw.caf")
             do {
                 try self.recorder.start(deviceUID: self.settings.inputDeviceUID, to: url)
+                self.sleepGuard.begin(reason: "Recording \(course.name)")
                 self.openNoteButton.isHidden = true
                 self.watchdog.reset()
                 self.apply(phase: .recording)
                 self.onStatusChange?(true)
                 Diagnostics.log("recording started -> \(url.path)")
             } catch {
+                Diagnostics.log("FAILED to start: \(error.localizedDescription)")
                 self.fail(error.localizedDescription)
+                Notifier.post(title: "LecRec could not start recording",
+                              body: error.localizedDescription)
             }
         }
     }
 
     private func finishRecording() {
         guard let finished = recorder.stop() else { return }
+        // Held through processing too: transcription is the long part, and a
+        // machine that sleeps mid-pipeline leaves a half-written note.
+        sleepGuard.begin(reason: "Processing lecture")
         meter.reset()
         watchdog.reset()
         onStatusChange?(false)
@@ -360,6 +372,7 @@ final class PopoverController: NSViewController {
 
         guard settings.autoRunPipelineOnStop else {
             apply(phase: .ready)
+            sleepGuard.end()
             hintLabel.stringValue = "Saved \(finished.url.lastPathComponent). Automatic processing is off in Settings."
             hintLabel.textColor = Theme.Palette.muted
             return
@@ -397,6 +410,7 @@ final class PopoverController: NSViewController {
                 self.hintLabel.stringValue = "\(note.lastPathComponent) is ready."
                 self.hintLabel.textColor = Theme.Palette.muted
                 self.onLibraryChanged?()
+                self.sleepGuard.end()
                 Notifier.post(title: "Lecture note ready",
                               body: "\(course.name), \(Self.clock(finished.duration)) recorded.")
             } catch {
@@ -408,6 +422,7 @@ final class PopoverController: NSViewController {
                 self.openNoteButton.title = "Open recording folder"
                 self.openNoteButton.isHidden = false
                 self.onLibraryChanged?()
+                self.sleepGuard.end()
                 Notifier.post(title: "Lecture processing failed",
                               body: "Your audio is safe at \(finished.url.lastPathComponent).")
             }

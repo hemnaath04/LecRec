@@ -108,6 +108,16 @@ final class RecordButton: NSControl {
 
     // MARK: - Hit handling
 
+    /// Labels and image views inside a custom control swallow clicks: AppKit hit
+    /// tests the deepest subview, an NSTextField returns itself, and mouseDown
+    /// never reaches the control. This routes every point inside the bounds back
+    /// to the control itself. Calling mouseDown directly in a test hides this,
+    /// which is exactly how it shipped.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        return bounds.contains(local) ? self : nil
+    }
+
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }
         isPressed = true
@@ -118,11 +128,18 @@ final class RecordButton: NSControl {
         guard isEnabled, isPressed else { return }
         isPressed = false
         alphaValue = 1
-        if bounds.contains(convert(event.locationInWindow, from: nil)) {
-            sendAction(action, to: target)
-        }
+        let local = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(local) else { return }
+        Diagnostics.log("record button pressed, state=\(buttonState)")
+        sendAction(action, to: target)
     }
 
     override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        sendAction(action, to: target)
+        return true
+    }
     override func accessibilityLabel() -> String? { titleLabel.stringValue }
 }

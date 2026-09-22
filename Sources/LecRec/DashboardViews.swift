@@ -214,6 +214,17 @@ final class SidebarItem: NSView {
     override func mouseEntered(with event: NSEvent) { applyAppearance(hovering: true) }
     override func mouseExited(with event: NSEvent) { applyAppearance(hovering: false) }
 
+
+    /// Labels and image views inside a custom control swallow clicks: AppKit hit
+    /// tests the deepest subview, an NSTextField returns itself, and mouseDown
+    /// never reaches the control. This routes every point inside the bounds back
+    /// to the control itself. Calling mouseDown directly in a test hides this,
+    /// which is exactly how it shipped.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        return bounds.contains(local) ? self : nil
+    }
+
     override func mouseDown(with event: NSEvent) {
         // The revealed action sits on the right of a selected pill.
         if selected, !actionLabel.isHidden {
@@ -227,5 +238,10 @@ final class SidebarItem: NSView {
     }
 
     override func accessibilityRole() -> NSAccessibility.Role? { .button }
+    override func isAccessibilityElement() -> Bool { true }
     override func accessibilityLabel() -> String? { titleLabel.stringValue }
+    override func accessibilityPerformPress() -> Bool {
+        onSelect?()
+        return true
+    }
 }

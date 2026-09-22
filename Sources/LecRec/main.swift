@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Theme.Typeface.register()   // before any view builds a font
         AppMenu.install()   // without this, Command V does nothing in any field
         Notifier.requestAuthorization()
+        Recorder.primePermissionIfNeeded()   // so the app appears in the Privacy list
 
         popoverController = PopoverController(settings: settings)
         popoverController.onStatusChange = { [weak self] recording in

@@ -76,6 +76,16 @@ final class CourseChip: NSControl {
 
     // MARK: - Menu
 
+    /// Labels and image views inside a custom control swallow clicks: AppKit hit
+    /// tests the deepest subview, an NSTextField returns itself, and mouseDown
+    /// never reaches the control. This routes every point inside the bounds back
+    /// to the control itself. Calling mouseDown directly in a test hides this,
+    /// which is exactly how it shipped.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        return bounds.contains(local) ? self : nil
+    }
+
     override func mouseDown(with event: NSEvent) {
         guard isEnabled, !courses.isEmpty else { return }
         highlight(true)
@@ -123,6 +133,12 @@ final class CourseChip: NSControl {
         return image
     }
 
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled, !courses.isEmpty else { return false }
+        mouseDown(with: NSEvent())
+        return true
+    }
     override func accessibilityRole() -> NSAccessibility.Role? { .popUpButton }
     override func accessibilityLabel() -> String? { "Course: \(titleLabel.stringValue)" }
 }
