@@ -65,6 +65,10 @@ struct Settings: Codable {
     var notesRoot: String = NSString(string: "~/Documents/course-notes").expandingTildeInPath
     var claudeModel: String = "opus"
     var denoise: Bool = true
+    /// After the note is published, compress the recording to m4a and delete
+    /// the raw and cleaned working files. About 1.34 GB down to 38 MB per
+    /// 100 minute lecture.
+    var archiveAudioAfterProcessing: Bool = true
     var transcriptionModel: TranscriptionModel = TranscriptionModel.recommended
     var autoRunPipelineOnStop: Bool = true
 
@@ -127,6 +131,7 @@ struct Settings: Codable {
         claudeModel = value(.claudeModel, defaults.claudeModel)
         denoise = value(.denoise, defaults.denoise)
         transcriptionModel = value(.transcriptionModel, defaults.transcriptionModel)
+        archiveAudioAfterProcessing = value(.archiveAudioAfterProcessing, defaults.archiveAudioAfterProcessing)
         autoRunPipelineOnStop = value(.autoRunPipelineOnStop, defaults.autoRunPipelineOnStop)
         linkPreviousLectures = value(.linkPreviousLectures, defaults.linkPreviousLectures)
         continuityLookback = value(.continuityLookback, defaults.continuityLookback)

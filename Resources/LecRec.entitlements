@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required. Under the hardened runtime the microphone is unreachable
+         without this, and macOS denies the request instantly rather than
+         prompting, so the app never even appears under Privacy and Security. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- The pipeline shells out to ffmpeg, whisper-cli and claude. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

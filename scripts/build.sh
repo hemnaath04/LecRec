@@ -43,8 +43,17 @@ if [ "$SIGN_AS" = "-" ]; then
 else
   echo "==> codesign as $SIGN_AS"
 fi
+# The entitlements are not optional: the hardened runtime blocks the microphone
+# without com.apple.security.device.audio-input, and denies without prompting.
 codesign --force --sign "$SIGN_AS" --identifier tech.hemnaath.lecrec \
+  --entitlements Resources/LecRec.entitlements \
   --options runtime "$APP" 2>&1 | sed 's/^/    /' || true
+
+if ! codesign -d --entitlements - "$APP" 2>&1 | grep -q "audio-input"; then
+  echo "    ERROR: the audio-input entitlement did not apply, the mic will not work" >&2
+  exit 1
+fi
+echo "    entitlements: audio-input present"
 
 echo "==> done: $APP"
 echo "    run:     open $APP"

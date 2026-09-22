@@ -84,11 +84,19 @@ enum Library {
             }
             for audio in files(in: courseDir.appendingPathComponent("audio"), ext: nil) {
                 guard let stamp = datePrefix(of: audio),
-                      ["caf", "wav", "m4a", "mp3"].contains(audio.pathExtension.lowercased())
+                      ["m4a", "caf", "wav", "mp3"].contains(audio.pathExtension.lowercased())
                 else { continue }
                 // Prefer the original over the cleaned copy for duration.
+                // Prefer the kept archive, then the raw, then anything else.
                 touch(stamp) {
-                    if $0.audioURL == nil || audio.lastPathComponent.contains("raw") {
+                    let rank = { (u: URL) -> Int in
+                        if u.pathExtension.lowercased() == "m4a" { return 0 }
+                        if u.lastPathComponent.contains("raw") { return 1 }
+                        return 2
+                    }
+                    if let existing = $0.audioURL {
+                        if rank(audio) < rank(existing) { $0.audioURL = audio }
+                    } else {
                         $0.audioURL = audio
                     }
                 }

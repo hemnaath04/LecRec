@@ -118,6 +118,14 @@ final class Pipeline {
                 self?.advance(.reasoning, detail)
             })
 
+        // Only now that the note exists is the raw audio expendable.
+        if settings.archiveAudioAfterProcessing {
+            if let result = try? await AudioArchive.compressAndPrune(
+                source: lecture.audioURL, alsoRemove: [cleaned], log: onLog) {
+                onLog?("Kept \(result.archive.lastPathComponent), freed \(result.bytesFreed / 1_000_000) MB")
+            }
+        }
+
         advance(.done, "Published to \(settings.destination.label)")
         return noteURL
     }

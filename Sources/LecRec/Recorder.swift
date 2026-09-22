@@ -117,12 +117,16 @@ final class Recorder {
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVSampleRateKey: format.sampleRate,
             AVNumberOfChannelsKey: format.channelCount,
-            AVLinearPCMBitDepthKey: 32,
-            AVLinearPCMIsFloatKey: true,
+            // 16-bit halves the on-disk rate during a lecture, from about
+            // 11.5 MB/min to 5.8, with nothing lost for a room microphone.
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
             AVLinearPCMIsNonInterleaved: false,
         ]
         let audioFile = try AVAudioFile(forWriting: url, settings: settings,
                                         commonFormat: .pcmFormatFloat32, interleaved: false)
+        // commonFormat stays float32: that is the tap's format, and AVAudioFile
+        // converts to the 16-bit file format on write.
         file = audioFile
         outputURL = url
 
