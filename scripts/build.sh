@@ -33,13 +33,28 @@ if [ -d Resources/skills ]; then
   cp -R Resources/skills "$APP/Contents/Resources/skills"
 fi
 
-# Ad-hoc signature. The hash changes every build, so macOS may re-ask for
-# microphone access after a rebuild. Acceptable for a personal tool.
-# A stable identity keeps the code signature constant across rebuilds, which is
-# what lets a microphone grant survive an update. Ad-hoc changes hash every time.
-SIGN_AS="${LECREC_SIGN_IDENTITY:--}"
+# TCC keys a permission grant to the code signature. For an ad-hoc signature
+# that key is the CDHash, which changes on every single build, so every rebuild
+# throws away the microphone and Documents grants and macOS asks again. With a
+# real certificate the key is the designated requirement (team id plus bundle
+# identifier), which is stable, so a grant survives a rebuild.
+#
+# This used to depend on LECREC_SIGN_IDENTITY being exported. It never was, so
+# every build silently fell back to ad-hoc and the user was re-prompted on every
+# launch. Discover an identity instead of requiring one to be configured.
+if [ -n "${LECREC_SIGN_IDENTITY:-}" ]; then
+  SIGN_AS="$LECREC_SIGN_IDENTITY"
+else
+  SIGN_AS=$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -oE '"(Developer ID Application|Apple Development)[^"]*"' \
+    | head -1 | tr -d '"')
+  SIGN_AS="${SIGN_AS:--}"
+fi
 if [ "$SIGN_AS" = "-" ]; then
-  echo "==> codesign (ad-hoc, grant will not survive rebuilds)"
+  echo "==> codesign (ad-hoc)"
+  echo "    WARNING: no signing certificate found, so macOS will ask for the"
+  echo "    microphone again after every rebuild. Create one in Keychain Access"
+  echo "    or set LECREC_SIGN_IDENTITY."
 else
   echo "==> codesign as $SIGN_AS"
 fi

@@ -205,9 +205,16 @@ final class Recorder {
 
         startedAt = Date()
         isRecording = true
+        lastHeartbeatMinute = -1
+        peakSinceHeartbeat = 0
+        silentFrames = 0
+        deadFrames = 0
+        lastDeadRecovery = nil
         let tick = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self, let startedAt = self.startedAt else { return }
-            self.onTick?(Date().timeIntervalSince(startedAt))
+            let elapsed = Date().timeIntervalSince(startedAt)
+            self.onTick?(elapsed)
+            self.heartbeat(elapsed: elapsed)
         }
         RunLoop.main.add(tick, forMode: .common)
         timer = tick
@@ -226,11 +233,37 @@ final class Recorder {
             }
     }
 
+    /// Once a minute, say what the recording is actually doing.
+    ///
+    /// The log had one line when a recording started and one when it stopped,
+    /// and on 2026-09-25 that left 111 minutes of nothing between them while the
+    /// microphone quietly died twice. A recording that narrates itself turns the
+    /// next outage into a log line instead of a forensic audio analysis.
+    private func heartbeat(elapsed: TimeInterval) {
+        // Deliberately not `Int(elapsed) % 60 == 0`: a 1 Hz Timer drifts, so
+        // elapsed can step 59 -> 61 and that minute's line never gets written.
+        // Comparing whole minutes fires once per minute whatever the drift.
+        let minute = Int(elapsed) / 60
+        guard minute > 0, minute != lastHeartbeatMinute else { return }
+        lastHeartbeatMinute = minute
+        let megabytes = Double(bytesWritten) / 1_048_576
+        let deadSeconds = Double(deadFrames) / sampleRate
+        let peak = peakSinceHeartbeat
+        peakSinceHeartbeat = 0
+        Diagnostics.log(String(
+            format: "recording %dm: %.0f MB, peak level %.2f, %.0f%% signal, %.0fs dead, on %@",
+            minute, megabytes, peak, signalCoverage * 100, deadSeconds, activeDeviceName))
+    }
+
+    private var lastHeartbeatMinute = -1
+    private var peakSinceHeartbeat: Float = 0
+
     /// Called from the tap on the audio thread for every buffer. A level of
     /// exactly zero means every sample in the buffer was zero, which real
     /// microphones do not produce even in a silent room: there is always a
     /// noise floor. Sustained zeros mean the device has stopped feeding us.
     private func noteInputActivity(level: Float, frames: AVAudioFrameCount) {
+        peakSinceHeartbeat = max(peakSinceHeartbeat, level)
         guard level == 0 else {
             if silentFrames > 0 {
                 let recovered = silentFrames >= deadThresholdFrames
