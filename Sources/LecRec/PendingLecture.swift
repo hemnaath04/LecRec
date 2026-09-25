@@ -59,11 +59,22 @@ enum PendingStore {
     }
 
     static func load() -> [PendingLecture] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let items = try? JSONDecoder().decode([PendingLecture].self, from: data)
-        else { return [] }
-        // Drop anything whose transcript has gone, so the queue cannot rot.
-        return items.filter { FileManager.default.fileExists(atPath: $0.transcriptPath) }
+        guard let data = try? Data(contentsOf: fileURL) else { return [] }
+        let decoder = JSONDecoder()
+        // save() writes dates as .iso8601, but a bare JSONDecoder defaults to
+        // .deferredToDate and expects a number, so every decode threw and the
+        // `try?` here swallowed it. The queue came back empty on every launch:
+        // the approval card never appeared, and because `add` starts from
+        // `load()`, each new lecture overwrote the file with a single entry.
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            let items = try decoder.decode([PendingLecture].self, from: data)
+            // Drop anything whose transcript has gone, so the queue cannot rot.
+            return items.filter { FileManager.default.fileExists(atPath: $0.transcriptPath) }
+        } catch {
+            Diagnostics.log("pending: could not read the queue, \(error)")
+            return []
+        }
     }
 
     static func save(_ items: [PendingLecture]) {

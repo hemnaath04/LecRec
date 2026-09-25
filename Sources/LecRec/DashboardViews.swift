@@ -9,6 +9,7 @@ final class LectureRow: NSView {
     private let metaLabel = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.faint)
     private let statusLabel = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.faint)
     private let openButton = NSButton()
+    private let playButton = NSButton()
     private let hairline = NSView()
     private var item: LibraryItem?
 
@@ -40,12 +41,27 @@ final class LectureRow: NSView {
         openButton.target = self
         openButton.action = #selector(open)
 
+        // A row with a recording but no note yet had nothing to click at all,
+        // which is most of a Tuesday afternoon.
+        playButton.title = "Play"
+        playButton.font = Theme.Font.caption
+        playButton.bezelStyle = .accessoryBarAction
+        playButton.isBordered = false
+        playButton.contentTintColor = Theme.Palette.muted
+        playButton.wantsLayer = true
+        playButton.layer?.cornerRadius = 6
+        playButton.layer?.cornerCurve = .continuous
+        playButton.layer?.borderWidth = 1
+        playButton.layer?.borderColor = Theme.Palette.stroke.cgColor
+        playButton.target = self
+        playButton.action = #selector(playRecording)
+
         let text = NSStackView(views: [titleLabel, metaLabel])
         text.orientation = .vertical
         text.alignment = .leading
         text.spacing = 3
 
-        let row = NSStackView(views: [courseTag, text, NSView(), statusLabel, openButton])
+        let row = NSStackView(views: [courseTag, text, NSView(), statusLabel, playButton, openButton])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 18
@@ -103,6 +119,7 @@ final class LectureRow: NSView {
         }
 
         openButton.isHidden = newItem.noteURL == nil && newItem.notionURL == nil
+        playButton.isHidden = newItem.audioURL == nil
     }
 
     @objc private func open() {
@@ -111,6 +128,40 @@ final class LectureRow: NSView {
             return
         }
         if let url = item?.noteURL { NSWorkspace.shared.open(url) }
+    }
+
+    @objc private func playRecording() {
+        guard let url = item?.audioURL else { return }
+        Media.play(url)
+    }
+
+    /// Right click is the escape hatch for when the system handler for a file
+    /// type is not what the user expected.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let item else { return nil }
+        let menu = NSMenu()
+        if let audio = item.audioURL {
+            menu.addItem(withTitle: "Play recording", action: #selector(playRecording), keyEquivalent: "")
+                .target = self
+            let reveal = menu.addItem(withTitle: "Show recording in Finder",
+                                      action: #selector(revealAudio), keyEquivalent: "")
+            reveal.target = self
+            _ = audio
+        }
+        if item.noteURL != nil {
+            let reveal = menu.addItem(withTitle: "Show note in Finder",
+                                      action: #selector(revealNote), keyEquivalent: "")
+            reveal.target = self
+        }
+        return menu.items.isEmpty ? nil : menu
+    }
+
+    @objc private func revealAudio() {
+        if let url = item?.audioURL { Media.reveal(url) }
+    }
+
+    @objc private func revealNote() {
+        if let url = item?.noteURL { Media.reveal(url) }
     }
 
     private static func dateText(_ date: Date) -> String {

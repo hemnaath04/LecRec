@@ -15,6 +15,7 @@ final class PendingCard: NSView {
     private let overrideBox = NSButton(checkboxWithTitle:
         "Write it up anyway, I understand the note will be thin", target: nil, action: nil)
     private let attachButton = NSButton()
+    private let playButton = NSButton()
     private let startButton = RecordButton(frame: .zero)
     private let skipButton = NSButton()
 
@@ -36,6 +37,14 @@ final class PendingCard: NSView {
         attachButton.target = self
         attachButton.action = #selector(chooseDeck)
 
+        // Nothing here could play the recording, so the only way to judge a
+        // questionable lecture before approving it was to go find the file.
+        playButton.title = "Play recording"
+        playButton.bezelStyle = .accessoryBarAction
+        playButton.controlSize = .small
+        playButton.target = self
+        playButton.action = #selector(playRecording)
+
         skipButton.title = "No deck for this one"
         skipButton.bezelStyle = .accessoryBarAction
         skipButton.controlSize = .small
@@ -47,7 +56,7 @@ final class PendingCard: NSView {
         startButton.action = #selector(start)
         startButton.translatesAutoresizingMaskIntoConstraints = false
 
-        let buttons = NSStackView(views: [attachButton, skipButton])
+        let buttons = NSStackView(views: [attachButton, skipButton, playButton])
         buttons.orientation = .horizontal
         buttons.spacing = 8
 
@@ -139,6 +148,11 @@ final class PendingCard: NSView {
     }
 
     // MARK: - Actions
+
+    @objc private func playRecording() {
+        guard let pending else { return }
+        Media.play(pending.audioURL)
+    }
 
     @objc private func chooseDeck() {
         guard var item = pending else { return }
