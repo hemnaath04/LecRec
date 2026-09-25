@@ -63,6 +63,33 @@ final class Recorder {
         sampleRate > 0 ? Double(framesWritten) / sampleRate : 0
     }
 
+    // MARK: - Dead input
+
+    /// A Continuity microphone can stop delivering audio without ever leaving
+    /// CoreAudio. The device stays present, the engine stays running, and every
+    /// buffer arrives full of zeros, so AVAudioEngineConfigurationChange never
+    /// fires and the dropout recovery below it never runs. On 2026-09-25 that
+    /// silently cost 45 of 81 recorded minutes. The only reliable signal is the
+    /// sample data itself, so the tap watches for it.
+    private var silentFrames: AVAudioFramePosition = 0
+    private var lastDeadRecovery: Date?
+    /// Cumulative frames of pure digital silence, for the quality gate.
+    private(set) var deadFrames: AVAudioFramePosition = 0
+
+    /// Seconds of continuous all-zero input before the input counts as dead.
+    /// Long enough that a genuinely silent room never trips it, short enough
+    /// that a lecture loses a sentence rather than half an hour.
+    private static let deadInputThreshold: TimeInterval = 15
+
+    /// Fires on the main queue when the input goes dead, and again when it recovers.
+    var onInputDead: ((Bool) -> Void)?
+
+    /// Fraction of the recording that carried actual samples, 0...1.
+    var signalCoverage: Double {
+        guard framesWritten > 0 else { return 0 }
+        return Double(framesWritten - deadFrames) / Double(framesWritten)
+    }
+
     // MARK: - Permission
 
     static func requestPermission() async -> Bool {
@@ -156,6 +183,7 @@ final class Recorder {
             try? self.file?.write(from: buffer)
             self.framesWritten += AVAudioFramePosition(buffer.frameLength)
             let level = Recorder.normalizedLevel(buffer)
+            self.noteInputActivity(level: level, frames: buffer.frameLength)
             DispatchQueue.main.async { self.onLevel?(level) }
         }
 
@@ -196,6 +224,43 @@ final class Recorder {
             object: engine, queue: .main) { [weak self] _ in
                 self?.handleConfigurationChange()
             }
+    }
+
+    /// Called from the tap on the audio thread for every buffer. A level of
+    /// exactly zero means every sample in the buffer was zero, which real
+    /// microphones do not produce even in a silent room: there is always a
+    /// noise floor. Sustained zeros mean the device has stopped feeding us.
+    private func noteInputActivity(level: Float, frames: AVAudioFrameCount) {
+        guard level == 0 else {
+            if silentFrames > 0 {
+                let recovered = silentFrames >= deadThresholdFrames
+                silentFrames = 0
+                if recovered {
+                    Diagnostics.log("input recovered, audio is flowing again")
+                    DispatchQueue.main.async { self.onInputDead?(false) }
+                }
+            }
+            return
+        }
+
+        silentFrames += AVAudioFramePosition(frames)
+        deadFrames += AVAudioFramePosition(frames)
+
+        guard silentFrames >= deadThresholdFrames else { return }
+        // Only act once per outage, and never more than once a minute, so a
+        // genuinely dead device does not spin the engine in a restart loop.
+        if let last = lastDeadRecovery, Date().timeIntervalSince(last) < 60 { return }
+        lastDeadRecovery = Date()
+        let seconds = Double(silentFrames) / sampleRate
+        Diagnostics.log("INPUT DEAD: \(Int(seconds))s of all-zero samples from \(activeDeviceName), restarting engine")
+        DispatchQueue.main.async {
+            self.onInputDead?(true)
+            self.handleConfigurationChange()
+        }
+    }
+
+    private var deadThresholdFrames: AVAudioFramePosition {
+        AVAudioFramePosition(Recorder.deadInputThreshold * sampleRate)
     }
 
     private func handleConfigurationChange() {
@@ -258,6 +323,7 @@ final class Recorder {
             try? self.file?.write(from: buffer)
             self.framesWritten += AVAudioFramePosition(buffer.frameLength)
             let level = Recorder.normalizedLevel(buffer)
+            self.noteInputActivity(level: level, frames: buffer.frameLength)
             DispatchQueue.main.async { self.onLevel?(level) }
         }
         engine.prepare()
