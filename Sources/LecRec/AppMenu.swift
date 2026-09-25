@@ -44,6 +44,9 @@ enum AppMenu {
         let dashboard = viewMenu.addItem(withTitle: "Dashboard",
                                          action: Selector(("showDashboard:")), keyEquivalent: "0")
         dashboard.target = NSApp.delegate
+        let live = viewMenu.addItem(withTitle: "Live Monitor",
+                                    action: Selector(("showLiveFromMenu:")), keyEquivalent: "l")
+        live.target = NSApp.delegate
         let refresh = viewMenu.addItem(withTitle: "Refresh",
                                        action: Selector(("refreshLibrary:")), keyEquivalent: "r")
         refresh.target = NSApp.delegate

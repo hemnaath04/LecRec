@@ -43,6 +43,17 @@ final class Recorder {
     private var startedAt: Date?
     private(set) var outputURL: URL?
     private(set) var isRecording = false
+    /// The device actually feeding the tap, which is not always the one that was
+    /// requested. Today a recording ran on the built-in mic while the setting
+    /// said system default, and nothing on screen said so.
+    private(set) var activeDeviceName: String = "unknown"
+
+    var bytesWritten: Int64 {
+        guard let url = outputURL,
+              let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        else { return 0 }
+        return (attributes[.size] as? NSNumber)?.int64Value ?? 0
+    }
 
     /// Frames written so far, the authoritative duration source for the coverage check.
     private var framesWritten: AVAudioFramePosition = 0
@@ -159,6 +170,9 @@ final class Recorder {
 
         requestedDeviceUID = deviceUID
         currentDestination = url
+        let resolved = deviceUID.flatMap { AudioDevices.device(uid: $0) } ?? AudioDevices.defaultInput()
+        activeDeviceName = resolved?.name ?? "unknown input"
+        Diagnostics.log("recording input: \(activeDeviceName) at \(Int(engine.inputNode.inputFormat(forBus: 0).sampleRate)) Hz")
         observeConfigurationChanges()
 
         startedAt = Date()
@@ -197,6 +211,7 @@ final class Recorder {
 
         let fallback = stillPresent ? wanted : AudioDevices.defaultInput()
         let name = fallback?.name ?? "the system default input"
+        activeDeviceName = name
 
         guard let destination = currentDestination else { return }
         let index = continuationFiles.count + 2

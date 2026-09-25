@@ -27,6 +27,12 @@ final class ProcessingCenter {
         handler(current)
     }
 
+    /// A window that closes must stop being called, or it is retained forever.
+    func stopObserving(_ key: String) {
+        observers.removeValue(forKey: key)
+        completions.removeValue(forKey: key)
+    }
+
     func onComplete(_ key: String, _ handler: @escaping (Result<URL, Error>, Lecture) -> Void) {
         completions[key] = handler
     }

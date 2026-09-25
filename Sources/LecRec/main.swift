@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsController: SettingsWindowController?
     private var onboardingController: OnboardingWindowController?
     private var mainWindowController: MainWindowController?
+    private var liveController: LiveMonitorWindowController?
     private var settings = Settings.load()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -16,14 +17,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Recorder.primePermissionIfNeeded()   // so the app appears in the Privacy list
 
         popoverController = PopoverController(settings: settings)
-        popoverController.onStatusChange = { [weak self] recording in
-            self?.updateIcon(recording: recording)
-            self?.mainWindowController?.setRecording(recording)
-        }
         popoverController.onLibraryChanged = { [weak self] in
             self?.mainWindowController?.reload()
         }
         popoverController.onOpenSettings = { [weak self] in self?.showSettings() }
+        popoverController.onOpenLive = { [weak self] in self?.showLive() }
+        popoverController.onLevelSample = { [weak self] level in
+            self?.liveController?.observe(level: level)
+        }
+        // Opening the monitor the moment recording starts is the difference
+        // between noticing a dead microphone now and noticing it after class.
+        popoverController.onStatusChange = { [weak self] recording in
+            self?.updateIcon(recording: recording)
+            self?.mainWindowController?.setRecording(recording)
+            if recording { self?.showLive() }
+        }
 
         popover.contentViewController = popoverController
         popover.behavior = .transient
@@ -88,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let controller = MainWindowController(settings: settings)
         controller.onOpenSettings = { [weak self] in self?.showSettings() }
+        controller.onOpenLive = { [weak self] in self?.showLive() }
         controller.onRecordPressed = { [weak self] _ in
             self?.popoverController.toggleRecordingExternally()
         }
@@ -108,6 +117,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !flag { showMainWindow() }
         return true
     }
+
+    func showLive() {
+        if let existing = liveController {
+            existing.showWindow(nil)
+            existing.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let controller = LiveMonitorWindowController(recorder: popoverController.recorder)
+        liveController = controller
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func showLiveFromMenu(_ sender: Any?) { showLive() }
 
     private func showOnboarding() {
         let controller = OnboardingWindowController(settings: settings)

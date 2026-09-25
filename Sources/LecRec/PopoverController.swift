@@ -9,7 +9,7 @@ final class PopoverController: NSViewController {
     }
 
     private var settings: Settings
-    private let recorder = Recorder()
+    let recorder = Recorder()
     private let watchdog = SilenceWatchdog()
     private let sleepGuard = SleepGuard()
 
@@ -37,7 +37,9 @@ final class PopoverController: NSViewController {
     private var currentStage: PipelineStage = .idle
 
     var onStatusChange: ((Bool) -> Void)?
+    var onLevelSample: ((Float) -> Void)?
     var onOpenSettings: (() -> Void)?
+    var onOpenLive: (() -> Void)?
 
     init(settings: Settings) {
         self.settings = settings
@@ -66,7 +68,12 @@ final class PopoverController: NSViewController {
         let permissionCardView = buildPermissionCard()
         permissionCard = permissionCardView
 
-        meterRow = NSStackView(views: [meter, NSView(), clockLabel])
+        let liveButton = NSButton(title: "Live", target: self, action: #selector(openLive))
+        liveButton.bezelStyle = .accessoryBarAction
+        liveButton.controlSize = .small
+        liveButton.toolTip = "Watch the recording and processing as it happens"
+
+        meterRow = NSStackView(views: [meter, NSView(), clockLabel, liveButton])
         meterRow.orientation = .horizontal
         meterRow.alignment = .centerY
         meterRow.distribution = .fill
@@ -270,6 +277,7 @@ final class PopoverController: NSViewController {
         recorder.onLevel = { [weak self] level in
             self?.meter.update(level: level)
             self?.watchdog.observe(level: level)
+            self?.onLevelSample?(level)
         }
         recorder.onTick = { [weak self] elapsed in
             self?.clockLabel.stringValue = Self.clock(elapsed)
@@ -292,6 +300,8 @@ final class PopoverController: NSViewController {
     // MARK: - Actions
 
     @objc private func openSettings() { onOpenSettings?() }
+
+    @objc private func openLive() { onOpenLive?() }
 
     @objc private func openLastNote() {
         guard let url = lastNoteURL else { return }

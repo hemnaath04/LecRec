@@ -28,6 +28,7 @@ final class MainWindowController: NSWindowController {
 
     var onRecordPressed: ((Course) -> Void)?
     var onOpenSettings: (() -> Void)?
+    var onOpenLive: (() -> Void)?
 
     init(settings: Settings) {
         self.settings = settings
@@ -196,6 +197,9 @@ final class MainWindowController: NSWindowController {
 
         content.addArrangedSubview(pendingCard)
         content.setCustomSpacing(16, after: pendingCard)
+        let openLive = NSClickGestureRecognizer(target: self, action: #selector(openLiveTapped))
+        progress.addGestureRecognizer(openLive)
+        progress.toolTip = "Open the live monitor"
         content.addArrangedSubview(progress)
         content.setCustomSpacing(30, after: progress)
 
@@ -400,6 +404,8 @@ final class MainWindowController: NSWindowController {
     // MARK: - Actions
 
     @objc private func openSettings() { onOpenSettings?() }
+
+    @objc private func openLiveTapped() { onOpenLive?() }
 
     @objc private func startRecording() {
         guard let course = settings.selectedCourse else { return }
