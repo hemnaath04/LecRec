@@ -20,6 +20,9 @@ struct PendingLecture: Codable, Hashable {
     var coverage: Double?
     var deckPath: String?
     var transcribedAt: Date
+    /// Set at transcription time so the card can warn before a write-up is spent.
+    var qualityNote: String?
+    var qualityBlocking: Bool = false
 
     var transcriptURL: URL { URL(fileURLWithPath: transcriptPath) }
     var audioURL: URL { URL(fileURLWithPath: audioPath) }
@@ -29,6 +32,8 @@ struct PendingLecture: Codable, Hashable {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
     }
+
+    var qualitySummary: String? { qualityNote }
 
     var coverageText: String {
         guard let coverage else { return "coverage unknown" }

@@ -10,6 +10,10 @@ final class PendingCard: NSView {
     private let title = Theme.label("", font: Theme.Font.of(15, .semibold), color: Theme.Palette.ink)
     private let detail = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.muted, lines: 2)
     private let deckLabel = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.faint, lines: 1)
+    private let qualityLabel = Theme.label("", font: Theme.Font.of(11.5, .medium),
+                                           color: Theme.Palette.warn, lines: 3)
+    private let overrideBox = NSButton(checkboxWithTitle:
+        "Write it up anyway, I understand the note will be thin", target: nil, action: nil)
     private let attachButton = NSButton()
     private let startButton = RecordButton(frame: .zero)
     private let skipButton = NSButton()
@@ -47,11 +51,14 @@ final class PendingCard: NSView {
         buttons.orientation = .horizontal
         buttons.spacing = 8
 
-        let left = NSStackView(views: [title, detail, buttons, deckLabel])
+        let left = NSStackView(views: [title, detail, qualityLabel, overrideBox, buttons, deckLabel])
         left.orientation = .vertical
         left.alignment = .leading
         left.spacing = 7
-        left.setCustomSpacing(12, after: detail)
+        left.setCustomSpacing(8, after: detail)
+        left.setCustomSpacing(12, after: overrideBox)
+        overrideBox.target = self
+        overrideBox.action = #selector(overrideChanged)
 
         let row = NSStackView(views: [left, NSView(), startButton])
         row.orientation = .horizontal
@@ -81,7 +88,39 @@ final class PendingCard: NSView {
         detail.textColor = (item.coverage ?? 1) < 0.95 ? Theme.Palette.warn : Theme.Palette.muted
 
         refreshDeck()
-        startButton.apply(.idle)
+        applyQuality(item)
+    }
+
+    /// A poor transcript does not block publishing, it blocks publishing by
+    /// accident. The button is disabled until the warning is acknowledged, so a
+    /// junk recording cannot become a Notion page on a stray click.
+    private func applyQuality(_ item: PendingLecture) {
+        guard let note = item.qualityNote else {
+            qualityLabel.isHidden = true
+            overrideBox.isHidden = true
+            startButton.apply(.idle)
+            startButton.isEnabled = true
+            return
+        }
+        qualityLabel.isHidden = false
+        qualityLabel.stringValue = note
+        qualityLabel.textColor = item.qualityBlocking ? Theme.Palette.record : Theme.Palette.warn
+
+        overrideBox.isHidden = !item.qualityBlocking
+        if item.qualityBlocking {
+            overrideBox.state = .off
+            startButton.apply(.busy)
+            startButton.isEnabled = false
+        } else {
+            startButton.apply(.idle)
+            startButton.isEnabled = true
+        }
+    }
+
+    @objc private func overrideChanged() {
+        let allowed = overrideBox.state == .on
+        startButton.apply(allowed ? .idle : .busy)
+        startButton.isEnabled = allowed
     }
 
     private func refreshDeck() {
@@ -138,6 +177,10 @@ final class PendingCard: NSView {
 
     @objc private func start() {
         guard let pending else { return }
+        if pending.qualityBlocking, overrideBox.state != .on {
+            Diagnostics.log("write-up blocked: quality warning not acknowledged")
+            return
+        }
         startButton.apply(.busy)
         onStart?(pending)
     }

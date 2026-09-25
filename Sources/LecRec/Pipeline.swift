@@ -110,6 +110,9 @@ final class Pipeline {
         // The cleaned copy is only an input to transcription, and it is large.
         try? FileManager.default.removeItem(at: cleaned)
 
+        let verdict = QualityGate.assess(duration: lecture.audioDuration, transcript: srt)
+        if let note = verdict.message { onLog?("Quality: \(note)") }
+
         return PendingLecture(
             courseSlug: lecture.course.slug,
             courseName: lecture.course.name,
@@ -121,7 +124,9 @@ final class Pipeline {
             audioDuration: lecture.audioDuration,
             coverage: report.audioDuration > 0 ? report.coverage : nil,
             deckPath: nil,
-            transcribedAt: Date())
+            transcribedAt: Date(),
+            qualityNote: verdict.message,
+            qualityBlocking: verdict.isBlocking)
     }
 
     /// Phase two, started by the user once they have decided about the deck.
