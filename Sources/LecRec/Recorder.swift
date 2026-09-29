@@ -27,7 +27,12 @@ final class Recorder {
     /// Fires on the main queue once a second with elapsed seconds.
     var onTick: ((TimeInterval) -> Void)?
 
-    private let engine = AVAudioEngine()
+    /// Recreated for every recording. A reused engine keeps its input
+    /// AudioUnit bound to whichever HAL device it saw first, and once that
+    /// binding goes stale a later start() on an explicit device fails with
+    /// kAudioHardwareNotRunningError ('stop'), which is what stopped the user
+    /// recording an IR lecture on 2026-09-29. A fresh engine has no stale state.
+    private var engine = AVAudioEngine()
     private var file: AVAudioFile?
     private var timer: Timer?
     private var configObserver: NSObjectProtocol?
@@ -136,10 +141,26 @@ final class Recorder {
 
     // MARK: - Lifecycle
 
+    /// Never let a bad microphone choice mean no recording at all. A lecture
+    /// happens once, so a failure on the chosen device falls back to the system
+    /// default and says so, rather than leaving the user with nothing.
     func start(deviceUID: String?, to url: URL) throws {
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             throw RecorderError.micDenied
         }
+        do {
+            try startEngine(deviceUID: deviceUID, to: url)
+        } catch {
+            guard deviceUID != nil else { throw error }
+            Diagnostics.log("start failed on the requested device: \(error.localizedDescription)")
+            Diagnostics.log("retrying on the system default input")
+            try startEngine(deviceUID: nil, to: url)
+            onInputChanged?("Could not use the chosen microphone, recording on \(activeDeviceName) instead.")
+        }
+    }
+
+    private func startEngine(deviceUID: String?, to url: URL) throws {
+        resetEngine()
 
         if let deviceUID {
             guard let device = AudioDevices.device(uid: deviceUID) else {
@@ -218,6 +239,21 @@ final class Recorder {
         }
         RunLoop.main.add(tick, forMode: .common)
         timer = tick
+    }
+
+    /// Tear the engine down and build a new one, so nothing carries over from a
+    /// previous recording or a failed attempt.
+    private func resetEngine() {
+        if let observer = configObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configObserver = nil
+        }
+        if engine.isRunning {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
+        engine.reset()
+        engine = AVAudioEngine()
     }
 
     /// AVAudioEngine posts this when the input hardware changes underneath it,
