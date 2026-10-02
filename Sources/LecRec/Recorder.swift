@@ -9,6 +9,7 @@ final class Recorder {
         case micDenied
         case deviceUnavailable(String)
         case engineFailed(String)
+        case notEnoughDisk(free: Int64, minutes: Int)
 
         var errorDescription: String? {
             switch self {
@@ -18,6 +19,9 @@ final class Recorder {
                 return "Input device \(name) is unavailable."
             case .engineFailed(let detail):
                 return "Could not start the audio engine: \(detail)"
+            case .notEnoughDisk(let free, let minutes):
+                return "Only \(DiskSpace.formatted(free)) left on disk, about \(minutes) minutes of recording. "
+                    + "Free up space before starting, because a full disk stops a recording with no warning."
             }
         }
     }
@@ -88,6 +92,13 @@ final class Recorder {
 
     /// Fires on the main queue when the input goes dead, and again when it recovers.
     var onInputDead: ((Bool) -> Void)?
+
+    /// Disk is getting tight but the recording continues.
+    var onDiskWarning: ((String) -> Void)?
+    /// Disk is nearly gone, so the recording is being ended deliberately while
+    /// the file can still be closed properly. Better a short lecture that plays
+    /// than a long one truncated mid-write.
+    var onDiskCritical: ((String) -> Void)?
 
     /// Fraction of the recording that carried actual samples, 0...1.
     var signalCoverage: Double {
@@ -177,6 +188,22 @@ final class Recorder {
         sampleRate = format.sampleRate
         framesWritten = 0
 
+        // 16-bit mono at the device rate. Checked before the file is created,
+        // so a doomed recording never starts at all.
+        bytesPerSecond = format.sampleRate * Double(format.channelCount) * 2
+        if let free = DiskSpace.availableBytes(at: url) {
+            let needed = Int64(bytesPerSecond * DiskSpace.plannedSeconds) + DiskSpace.reserveBytes
+            if free < needed {
+                let minutes = DiskSpace.minutes(ofRoom: free - DiskSpace.reserveBytes,
+                                                bytesPerSecond: bytesPerSecond)
+                Diagnostics.log("disk check failed: \(DiskSpace.formatted(free)) free, "
+                    + "needs \(DiskSpace.formatted(needed)) for a full lecture")
+                throw RecorderError.notEnoughDisk(free: free, minutes: max(0, minutes))
+            }
+            Diagnostics.log("disk: \(DiskSpace.formatted(free)) free, "
+                + "room for about \(DiskSpace.minutes(ofRoom: free, bytesPerSecond: bytesPerSecond)) minutes")
+        }
+
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 
@@ -231,6 +258,7 @@ final class Recorder {
         peakSinceHeartbeat = 0
         lastFrameCount = 0
         stalledSeconds = 0
+        warnedAboutDisk = false
         silentFrames = 0
         deadFrames = 0
         lastDeadRecovery = nil
@@ -273,6 +301,33 @@ final class Recorder {
             }
     }
 
+    /// Stop on purpose before the disk runs out.
+    ///
+    /// A writer that dies on a full volume leaves a file whose header was never
+    /// finalised and loses everything still buffered. Ending the recording
+    /// deliberately keeps what was captured and tells the user why.
+    private func checkDiskSpace() {
+        guard isRecording, let url = outputURL,
+              let free = DiskSpace.availableBytes(at: url) else { return }
+
+        if free < DiskSpace.criticalBytes {
+            let message = "Recording stopped: only \(DiskSpace.formatted(free)) left on disk. "
+                + "What was captured so far has been saved."
+            Diagnostics.log("DISK CRITICAL: \(DiskSpace.formatted(free)) free, ending the recording")
+            onDiskCritical?(message)
+            return
+        }
+
+        guard free < DiskSpace.warningBytes, !warnedAboutDisk else { return }
+        warnedAboutDisk = true
+        let minutes = DiskSpace.minutes(ofRoom: free - DiskSpace.criticalBytes,
+                                        bytesPerSecond: bytesPerSecond)
+        let message = "Disk is nearly full: \(DiskSpace.formatted(free)) left, "
+            + "about \(max(0, minutes)) more minutes of recording."
+        Diagnostics.log("DISK LOW: \(message)")
+        onDiskWarning?(message)
+    }
+
     /// Catch a tap that has stopped firing altogether.
     ///
     /// noteInputActivity and SilenceWatchdog are both driven by the tap, so
@@ -306,6 +361,8 @@ final class Recorder {
     private static let stallThreshold = 10
     private var lastFrameCount: AVAudioFramePosition = 0
     private var stalledSeconds = 0
+    private var bytesPerSecond: Double = 96_000
+    private var warnedAboutDisk = false
 
     /// Once a minute, say what the recording is actually doing.
     ///
@@ -324,9 +381,12 @@ final class Recorder {
         let deadSeconds = Double(deadFrames) / sampleRate
         let peak = peakSinceHeartbeat
         peakSinceHeartbeat = 0
+        let free = outputURL.flatMap { DiskSpace.availableBytes(at: $0) }
+        let room = free.map { ", \(DiskSpace.formatted($0)) disk free" } ?? ""
         Diagnostics.log(String(
-            format: "recording %dm: %.0f MB, peak level %.2f, %.0f%% signal, %.0fs dead, on %@",
-            minute, megabytes, peak, signalCoverage * 100, deadSeconds, activeDeviceName))
+            format: "recording %dm: %.0f MB, peak level %.2f, %.0f%% signal, %.0fs dead, on %@%@",
+            minute, megabytes, peak, signalCoverage * 100, deadSeconds, activeDeviceName, room))
+        checkDiskSpace()
     }
 
     private var lastHeartbeatMinute = -1

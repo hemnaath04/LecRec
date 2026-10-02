@@ -288,6 +288,21 @@ final class PopoverController: NSViewController {
             self.hintLabel.textColor = Theme.Palette.warn
             Notifier.post(title: "Microphone changed mid-recording", body: message)
         }
+        recorder.onDiskWarning = { [weak self] message in
+            guard let self else { return }
+            self.hintLabel.stringValue = message
+            self.hintLabel.textColor = Theme.Palette.warn
+            Notifier.post(title: "LecRec is running out of disk", body: message)
+        }
+        recorder.onDiskCritical = { [weak self] message in
+            guard let self, self.recorder.isRecording else { return }
+            // End it here rather than letting the writer die on a full volume,
+            // which loses the unfinalised file entirely.
+            self.finishRecording()
+            self.hintLabel.stringValue = message
+            self.hintLabel.textColor = Theme.Palette.warn
+            Notifier.post(title: "Recording stopped, disk full", body: message)
+        }
         watchdog.onChange = { [weak self] warning in
             guard let self, self.recorder.isRecording else { return }
             self.hintLabel.stringValue = warning
