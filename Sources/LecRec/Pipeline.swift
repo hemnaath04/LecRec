@@ -9,6 +9,9 @@ struct Lecture {
     var audioURL: URL
     var audioDuration: TimeInterval
     var deckPath: String?            // optional .pptx / .pdf the user attached
+    /// Notebooks or source files worked through in class. A notebook is
+    /// flattened to Markdown before the prompt sees it, see CodeNotes.
+    var codePaths: [String] = []
 
     var dateStamp: String {
         let formatter = DateFormatter()
@@ -20,6 +23,11 @@ struct Lecture {
 
     /// True when Claude picks the filename, so the caller must glob for it.
     var needsGeneratedSlug: Bool { slug.isEmpty }
+
+    /// The microphone the audio actually came from. The prompt used to name a
+    /// specific laptop model and a specific transcriber, both of which went out
+    /// of date and told the model something false about its own input.
+    var captureDescription: String = "a room microphone"
 }
 
 enum PipelineStage: String {
@@ -124,6 +132,7 @@ final class Pipeline {
             audioDuration: lecture.audioDuration,
             coverage: report.audioDuration > 0 ? report.coverage : nil,
             deckPath: nil,
+            codePaths: [],
             transcribedAt: Date(),
             qualityNote: verdict.message,
             qualityBlocking: verdict.isBlocking)
@@ -131,9 +140,23 @@ final class Pipeline {
 
     /// Phase two, started by the user once they have decided about the deck.
     func writeUp(_ pending: PendingLecture) async throws -> URL {
-        let lecture = pending.lecture
+        var lecture = pending.lecture
         let report = CoverageReport(audioDuration: pending.audioDuration,
                                     transcriptEnd: (pending.coverage ?? 1) * pending.audioDuration)
+
+        // Flatten here rather than at attach time, so a re-run picks up a
+        // notebook the user kept editing after the lecture.
+        if !lecture.codePaths.isEmpty {
+            let courseDir = URL(fileURLWithPath: settings.notesRoot)
+                .appendingPathComponent(lecture.course.slug, isDirectory: true)
+            let prepared = lecture.codePaths.compactMap {
+                CodeNotes.prepare($0, in: courseDir, log: onLog)
+            }
+            lecture.codePaths = prepared
+            advance(.reasoning, prepared.count == 1
+                    ? "Reading the class code"
+                    : "Reading \(prepared.count) class code files")
+        }
 
         if settings.linkPreviousLectures {
             advance(.recalling, "Reading the last \(settings.continuityLookback) notes for this course")

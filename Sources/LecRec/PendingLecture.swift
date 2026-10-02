@@ -19,6 +19,7 @@ struct PendingLecture: Codable, Hashable {
     var audioDuration: TimeInterval
     var coverage: Double?
     var deckPath: String?
+    var codePaths: [String]?
     var transcribedAt: Date
     /// Set at transcription time so the card can warn before a write-up is spent.
     var qualityNote: String?
@@ -45,7 +46,8 @@ struct PendingLecture: Codable, Hashable {
         Lecture(course: Course(slug: courseSlug, name: courseName, notionCourse: notionCourse),
                 date: date, slug: slug,
                 audioURL: audioURL, audioDuration: audioDuration,
-                deckPath: deckPath)
+                deckPath: deckPath,
+                codePaths: codePaths ?? [])
     }
 }
 

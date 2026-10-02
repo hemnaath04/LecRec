@@ -405,7 +405,8 @@ final class PopoverController: NSViewController {
             slug: Self.slugify(topicField.stringValue),
             audioURL: finished.url,
             audioDuration: finished.duration,
-            deckPath: nil)
+            deckPath: nil,
+            codePaths: [])
 
         ProcessingCenter.shared.observe("popover") { [weak self] update in
             guard let self, let update else { return }

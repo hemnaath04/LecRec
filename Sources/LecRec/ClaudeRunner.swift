@@ -84,6 +84,9 @@ final class ClaudeRunner {
         if let deck = lecture.deckPath, !deck.isEmpty {
             arguments += ["--add-dir", (deck as NSString).deletingLastPathComponent]
         }
+        for code in lecture.codePaths where !code.isEmpty {
+            arguments += ["--add-dir", (code as NSString).deletingLastPathComponent]
+        }
 
         var resultText = ""
         var failure: String?

@@ -48,6 +48,23 @@ enum Prompt {
             .map { "- Slide deck: \($0)" }
             ?? "- Slide deck: none provided for this lecture. Say so in the note and open a gap for it."
 
+        // Code worked through in class is the one source that is exact. The
+        // transcript garbles identifiers and the slides rarely show a whole
+        // cell, so where the code and the transcript disagree, the code wins.
+        let codeLine: String
+        if lecture.codePaths.isEmpty {
+            codeLine = "- Class code: none provided."
+        } else {
+            let listed = lecture.codePaths.map { "  - \($0)" }.joined(separator: "\n")
+            codeLine = """
+                - Class code worked through in the lecture, flattened from the notebook where it was one:
+                \(listed)
+                  Treat these as authoritative for API names, argument names, variable names and
+                  numeric results. Quote the real cells rather than inventing equivalent code, keep
+                  each one runnable, and say which cell produced any result you cite.
+                """
+        }
+
         let naming = lecture.needsGeneratedSlug
             ? """
               - Write the local Markdown to \(noteURL.deletingLastPathComponent().path)/\
@@ -65,14 +82,15 @@ enum Prompt {
         - Course: \(lecture.course.name), Notion Course property value "\(lecture.course.notionCourse)"
         \(destinationIdentifiers(settings: settings))
         - Date: \(lecture.dateStamp)
-        - Timestamped transcript (SRT, from parakeet-mlx on device): \(transcript.path)
+        - Timestamped transcript (SRT, transcribed on device): \(transcript.path)
         \(deckLine)
+        \(codeLine)
         \(naming)
 
         Recording quality context, which matters for how much you trust the transcript:
         - \(coverage.summary)
-        - The audio was captured on a MacBook Air built-in microphone from a back row of \
-        the lecture hall, then denoised. Treat proper nouns, numbers and formulas in the \
+        - The audio was captured on \(lecture.captureDescription) from a back row of the \
+        lecture hall, then denoised. Treat proper nouns, numbers and formulas in the \
         transcript as unreliable. Correct only what is unambiguous and list the rest \
         verbatim in the Gaps section rather than guessing.
 

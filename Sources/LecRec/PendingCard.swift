@@ -16,6 +16,8 @@ final class PendingCard: NSView {
         "Write it up anyway, I understand the note will be thin", target: nil, action: nil)
     private let attachButton = NSButton()
     private let playButton = NSButton()
+    private let codeButton = NSButton()
+    private let codeLabel = Theme.label("", font: Theme.Font.rowMeta, color: Theme.Palette.faint, lines: 2)
     private let startButton = RecordButton(frame: .zero)
     private let skipButton = NSButton()
 
@@ -39,6 +41,14 @@ final class PendingCard: NSView {
 
         // Nothing here could play the recording, so the only way to judge a
         // questionable lecture before approving it was to go find the file.
+        // The notebook worked through in class is the only exact record of what
+        // the code actually was, so it is worth a button of its own.
+        codeButton.title = "Attach class code"
+        codeButton.bezelStyle = .accessoryBarAction
+        codeButton.controlSize = .small
+        codeButton.target = self
+        codeButton.action = #selector(chooseCode)
+
         playButton.title = "Play recording"
         playButton.bezelStyle = .accessoryBarAction
         playButton.controlSize = .small
@@ -56,11 +66,11 @@ final class PendingCard: NSView {
         startButton.action = #selector(start)
         startButton.translatesAutoresizingMaskIntoConstraints = false
 
-        let buttons = NSStackView(views: [attachButton, skipButton, playButton])
+        let buttons = NSStackView(views: [attachButton, codeButton, skipButton, playButton])
         buttons.orientation = .horizontal
         buttons.spacing = 8
 
-        let left = NSStackView(views: [title, detail, qualityLabel, overrideBox, buttons, deckLabel])
+        let left = NSStackView(views: [title, detail, qualityLabel, overrideBox, buttons, deckLabel, codeLabel])
         left.orientation = .vertical
         left.alignment = .leading
         left.spacing = 7
@@ -145,6 +155,24 @@ final class PendingCard: NSView {
             attachButton.title = "Choose deck (PDF or PPTX)"
             skipButton.isHidden = true
         }
+        refreshCode()
+    }
+
+    private func refreshCode() {
+        let paths = pending?.codePaths ?? []
+        guard !paths.isEmpty else {
+            codeLabel.stringValue = ""
+            codeLabel.isHidden = true
+            codeButton.title = "Attach class code"
+            return
+        }
+        codeLabel.isHidden = false
+        codeLabel.textColor = Theme.Palette.leaf
+        let names = paths.map { ($0 as NSString).lastPathComponent }
+        codeLabel.stringValue = names.count == 1
+            ? "Code: \(names[0])"
+            : "Code: \(names.count) files, \(names.joined(separator: ", "))"
+        codeButton.title = "Change class code"
     }
 
     // MARK: - Actions
@@ -152,6 +180,35 @@ final class PendingCard: NSView {
     @objc private func playRecording() {
         guard let pending else { return }
         Media.play(pending.audioURL)
+    }
+
+    @objc private func chooseCode() {
+        guard var item = pending else { return }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.message = "Pick the notebook or source files from this class."
+        panel.allowedContentTypes = [
+            UTType(filenameExtension: "ipynb"), UTType(filenameExtension: "py"),
+            UTType(filenameExtension: "java"), UTType(filenameExtension: "sql"),
+            UTType(filenameExtension: "r"), UTType(filenameExtension: "txt"),
+            UTType(filenameExtension: "md"), .pythonScript, .sourceCode, .plainText,
+        ].compactMap { $0 }
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        var paths = item.codePaths ?? []
+        for url in panel.urls where !paths.contains(url.path) { paths.append(url.path) }
+        item.codePaths = paths
+        PendingStore.update(item)
+        configure(item)
+        onChanged?()
+    }
+
+    @objc private func clearCode() {
+        guard var item = pending else { return }
+        item.codePaths = nil
+        PendingStore.update(item)
+        configure(item)
+        onChanged?()
     }
 
     @objc private func chooseDeck() {

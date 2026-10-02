@@ -226,8 +226,11 @@ final class Recorder {
 
         startedAt = Date()
         isRecording = true
+        Shell.yieldToRecording = true
         lastHeartbeatMinute = -1
         peakSinceHeartbeat = 0
+        lastFrameCount = 0
+        stalledSeconds = 0
         silentFrames = 0
         deadFrames = 0
         lastDeadRecovery = nil
@@ -235,6 +238,7 @@ final class Recorder {
             guard let self, let startedAt = self.startedAt else { return }
             let elapsed = Date().timeIntervalSince(startedAt)
             self.onTick?(elapsed)
+            self.checkForStall()
             self.heartbeat(elapsed: elapsed)
         }
         RunLoop.main.add(tick, forMode: .common)
@@ -268,6 +272,40 @@ final class Recorder {
                 self?.handleConfigurationChange()
             }
     }
+
+    /// Catch a tap that has stopped firing altogether.
+    ///
+    /// noteInputActivity and SilenceWatchdog are both driven by the tap, so
+    /// neither can see the tap itself die: no buffers means no callbacks means
+    /// no detection. On 2026-10-02 the tap delivered 1.4 seconds and stopped,
+    /// and the recording sat at 0 MB for four minutes reporting healthily.
+    /// This check runs on the 1 Hz timer, which is independent of the audio
+    /// thread, and compares the frame count against the previous second.
+    private func checkForStall() {
+        guard isRecording else { return }
+        guard framesWritten == lastFrameCount else {
+            if stalledSeconds >= Recorder.stallThreshold {
+                Diagnostics.log("input resumed after a stall")
+                DispatchQueue.main.async { self.onInputDead?(false) }
+            }
+            stalledSeconds = 0
+            lastFrameCount = framesWritten
+            return
+        }
+
+        stalledSeconds += 1
+        guard stalledSeconds == Recorder.stallThreshold else { return }
+        if let last = lastDeadRecovery, Date().timeIntervalSince(last) < 60 { return }
+        lastDeadRecovery = Date()
+        Diagnostics.log("INPUT STALLED: no audio buffers for \(stalledSeconds)s from \(activeDeviceName), restarting engine")
+        onInputDead?(true)
+        handleConfigurationChange()
+    }
+
+    /// Seconds without a single new frame before the tap counts as stalled.
+    private static let stallThreshold = 10
+    private var lastFrameCount: AVAudioFramePosition = 0
+    private var stalledSeconds = 0
 
     /// Once a minute, say what the recording is actually doing.
     ///
@@ -408,6 +446,7 @@ final class Recorder {
         timer?.invalidate()
         timer = nil
         isRecording = false
+        Shell.yieldToRecording = false
         if let configObserver {
             NotificationCenter.default.removeObserver(configObserver)
             self.configObserver = nil

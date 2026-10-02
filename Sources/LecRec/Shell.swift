@@ -42,6 +42,10 @@ enum Shell {
         return path
     }
 
+    /// Set while a lecture is being captured. Recording owns the machine for as
+    /// long as it lasts, because it is the one step that cannot be redone.
+    nonisolated(unsafe) static var yieldToRecording = false
+
     /// Runs to completion, streaming stdout and stderr lines to `log`.
     @discardableResult
     static func run(_ executable: String,
@@ -53,6 +57,12 @@ enum Shell {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        // A lecture is unrepeatable; a write-up can take a minute longer. While
+        // audio is being captured, every child runs at a lower quality of
+        // service so a transcription or a Claude Code run cannot starve the
+        // audio thread. On 2026-10-02 a write-up running during a recording
+        // left the tap dead after 1.4 seconds and 0 MB on disk.
+        process.qualityOfService = yieldToRecording ? .utility : .userInitiated
         if let cwd { process.currentDirectoryURL = cwd }
 
         var env = ProcessInfo.processInfo.environment
