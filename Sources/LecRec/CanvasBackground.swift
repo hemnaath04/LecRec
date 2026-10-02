@@ -55,9 +55,12 @@ final class CanvasBackgroundView: NSView {
         }
         context.restoreGState()
 
-        // Grain, tiled, to dither the gradient.
+        // Grain, tiled, to dither the gradient. sourceOver rather than
+        // plusLighter: plusLighter adds, so any error in the tile's alpha shows
+        // up as the whole canvas turning to white static rather than as a
+        // slightly wrong texture. It did exactly that on 2026-10-02.
         NSColor(patternImage: grain).setFill()
-        bounds.fill(using: .plusLighter)
+        bounds.fill(using: .sourceOver)
     }
 
     /// A small tile of very low alpha noise, repeated across the window.
@@ -65,19 +68,24 @@ final class CanvasBackgroundView: NSView {
         let bytesPerRow = side * 4
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * side)
         var generator = SystemRandomNumberGenerator()
+        // alpha stays low, and the colour channels are NOT scaled by it, because
+        // the image below is declared unpremultiplied. Declaring premultiplied
+        // while storing unpremultiplied values is undefined behaviour in
+        // CoreGraphics, and in practice rendered the window as static.
+        let alpha: UInt8 = 5            // about 2 percent, enough to dither
         for index in stride(from: 0, to: pixels.count, by: 4) {
             let value = UInt8.random(in: 0...255, using: &generator)
             pixels[index] = value
             pixels[index + 1] = value
             pixels[index + 2] = value
-            pixels[index + 3] = 5          // about 2 percent, enough to dither
+            pixels[index + 3] = alpha
         }
         let space = CGColorSpaceCreateDeviceRGB()
         guard let provider = CGDataProvider(data: Data(pixels) as CFData),
               let image = CGImage(width: side, height: side, bitsPerComponent: 8,
                                   bitsPerPixel: 32, bytesPerRow: bytesPerRow,
                                   space: space,
-                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
                                   provider: provider, decode: nil, shouldInterpolate: false,
                                   intent: .defaultIntent)
         else { return NSImage(size: NSSize(width: side, height: side)) }
