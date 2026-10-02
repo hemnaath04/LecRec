@@ -59,8 +59,12 @@ enum Transcriber {
     /// Routes to Parakeet or whisper.cpp. Both are told to write the same SRT
     /// path so nothing downstream has to know which engine ran.
     static func run(input: URL, outputSRT: URL, model: TranscriptionModel,
+                    hotwords: [String] = [],
                     log: ((String) -> Void)?) async throws {
         switch model {
+        case .phonon2:
+            try await Phonon.transcribe(input: input, outputSRT: outputSRT,
+                                        hotwords: hotwords, log: log)
         case .parakeetV3:
             try await runParakeet(input: input, outputSRT: outputSRT, log: log)
         default:

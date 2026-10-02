@@ -6,6 +6,7 @@ import Foundation
 /// through whisper.cpp runs anywhere including Intel Macs, and scales down far
 /// enough for an old machine or a small disk.
 enum TranscriptionModel: String, Codable, CaseIterable {
+    case phonon2
     case parakeetV3
     case whisperTurbo
     case whisperSmall
@@ -14,6 +15,7 @@ enum TranscriptionModel: String, Codable, CaseIterable {
 
     var label: String {
         switch self {
+        case .phonon2:      return "Phonon-2"
         case .parakeetV3:   return "Parakeet TDT 0.6B v3"
         case .whisperTurbo: return "Whisper large-v3-turbo"
         case .whisperSmall: return "Whisper small (English)"
@@ -25,7 +27,8 @@ enum TranscriptionModel: String, Codable, CaseIterable {
     /// One line for the picker row.
     var summary: String {
         switch self {
-        case .parakeetV3:   return "Best accuracy and fastest. Apple Silicon only."
+        case .phonon2:      return "Best on quiet far-field audio. Apple Silicon only."
+        case .parakeetV3:   return "Strong and fast. Apple Silicon only."
         case .whisperTurbo: return "Nearly as accurate, runs on any Mac."
         case .whisperSmall: return "Best accuracy per megabyte. Runs on any Mac."
         case .whisperBase:  return "Fast and tiny, noticeably rougher."
@@ -35,6 +38,7 @@ enum TranscriptionModel: String, Codable, CaseIterable {
 
     var downloadSize: String {
         switch self {
+        case .phonon2:      return "about 164 MB"
         case .parakeetV3:   return "about 2.5 GB"
         case .whisperTurbo: return "about 1.6 GB"
         case .whisperSmall: return "about 500 MB"
@@ -46,6 +50,7 @@ enum TranscriptionModel: String, Codable, CaseIterable {
     /// Published word error rate, with its caveat. Lower is better.
     var accuracy: String {
         switch self {
+        case .phonon2:      return "5.21% average WER on the Open ASR leaderboard, 9.37% on AMI"
         case .parakeetV3:   return "6.3% average WER on the Open ASR leaderboard"
         case .whisperTurbo: return "roughly 3.5 to 5% WER on clean English"
         case .whisperSmall: return "5.9% WER measured on a clean English sample"
@@ -54,12 +59,29 @@ enum TranscriptionModel: String, Codable, CaseIterable {
         }
     }
 
-    var requiresAppleSilicon: Bool { self == .parakeetV3 }
+    var requiresAppleSilicon: Bool { self == .parakeetV3 || self == .phonon2 }
 
     /// What you actually gain and give up. Written for someone deciding, not
     /// for a spec sheet.
     var tradeoff: String {
         switch self {
+        case .phonon2:
+            return """
+            What you get: the best results measured on this user's own lectures, not \
+            on a benchmark. On a clean 48.7 minute recording it transcribed 4,692 words \
+            against Whisper small's 4,406, with none of Whisper's 57 unusable marker \
+            cues. On a 71.8 minute lecture that Whisper returned as 97 percent \
+            [NON-ENGLISH SPEECH], it recovered 6,147 words of coherent content. It is \
+            164 MB, a quantised Parakeet TDT 0.6B v3, and scores 9.37% on AMI, the \
+            far-field meeting benchmark closest to a lecture hall, against Whisper \
+            large-v3-turbo's 13.88%.
+
+            What you give up: honesty about silence. Where the audio is genuinely \
+            unintelligible it does not emit a marker, it guesses, and the guess reads \
+            as fluent English. The write-up model is told to find and quarantine those \
+            stretches, but a note from a bad recording still needs your eyes. \
+            English only, Apple Silicon only.
+            """
         case .parakeetV3:
             return """
             What you get: the most accurate option here and by far the fastest, \
@@ -116,18 +138,25 @@ enum TranscriptionModel: String, Codable, CaseIterable {
     // MARK: - Execution
 
     var binaryName: String {
-        self == .parakeetV3 ? "parakeet-mlx" : "whisper-cli"
+        switch self {
+        case .phonon2:    return "phonon"
+        case .parakeetV3: return "parakeet-mlx"
+        default:          return "whisper-cli"
+        }
     }
 
     var installHint: String {
-        self == .parakeetV3
-            ? "uv tool install parakeet-mlx -U"
-            : "brew install whisper-cpp"
+        switch self {
+        case .phonon2:    return Phonon.installHint
+        case .parakeetV3: return "uv tool install parakeet-mlx -U"
+        default:          return "brew install whisper-cpp"
+        }
     }
 
     /// whisper.cpp model file, downloaded on first use.
     var whisperModelName: String? {
         switch self {
+        case .phonon2:      return nil
         case .parakeetV3:   return nil
         case .whisperTurbo: return "large-v3-turbo"
         // The .en weights are trained on English only and score better on it than
@@ -154,6 +183,6 @@ enum TranscriptionModel: String, Codable, CaseIterable {
     }
 
     static var recommended: TranscriptionModel {
-        isAppleSilicon ? .parakeetV3 : .whisperTurbo
+        isAppleSilicon ? .phonon2 : .whisperTurbo
     }
 }

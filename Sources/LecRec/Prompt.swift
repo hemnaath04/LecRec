@@ -39,6 +39,47 @@ enum Prompt {
         """
     }
 
+    /// What this particular transcriber gets wrong, told to the model that has
+    /// to live with it.
+    ///
+    /// Phonon-2 never admits defeat. Where Whisper writes [NON-ENGLISH SPEECH]
+    /// over unintelligible audio, Phonon writes fluent, confident, invented
+    /// English. Measured on a real lecture it recovered 6,147 words where
+    /// Whisper managed only markers, which is why it is the default, but part
+    /// of that gain is fabrication. QualityGate cannot catch it, because unlike
+    /// the Whisper hallucination loops it does not repeat itself. The only
+    /// reader left who can catch it is the model writing the note.
+    static func transcriberCaveat(settings: Settings) -> String {
+        guard settings.transcriptionModel == .phonon2 else {
+            return "- The transcriber marks audio it cannot parse, so trust a marker over a guess."
+        }
+        return """
+        - IMPORTANT, about this transcriber. Phonon-2 never signals that it could not
+          hear something. Where the room was unintelligible it does not write
+          [INAUDIBLE], it invents fluent English instead, so a confident sentence is
+          not evidence that anything was said. You are the only check on this.
+          Nothing downstream looks for it, and it does not repeat itself the way a
+          decoder loop does, so a length or repetition check will not find it.
+        - A passage is probably invented when it is locally grammatical but fails all
+          of these at once: it has no connection to the lecture's subject, nothing in
+          the slide deck or the class code corresponds to it, and it carries no
+          technical content, only names, affirmations or filler. Runs of "Yeah. Yeah.
+          Okay." and stray proper nouns that belong to no part of the course are the
+          usual shape. A real digression is still on a recognisable topic, so when a
+          passage is merely surprising rather than disconnected, keep it and mark it
+          uncertain. Prefer keeping a real sentence to cutting a suspicious one.
+        - When you do conclude a stretch was invented, do not paraphrase it, summarise
+          it or build any claim on it. Record it in the Gaps section as a timestamp
+          range with the note that the audio was unintelligible and the transcriber
+          guessed, and quote enough of the text that the reader can see why. If the
+          deck or the class code covers that part of the lecture, fill the gap from
+          those and say which source you used.
+        - Say in the note how many minutes you quarantined this way. A reader deciding
+          whether to trust the note needs that number, and it is also the only
+          feedback this app gets about how bad a recording really was.
+        """
+    }
+
     static func buildNote(lecture: Lecture,
                           transcript: URL,
                           coverage: CoverageReport,
@@ -93,6 +134,7 @@ enum Prompt {
         lecture hall, then denoised. Treat proper nouns, numbers and formulas in the \
         transcript as unreliable. Correct only what is unambiguous and list the rest \
         verbatim in the Gaps section rather than guessing.
+        \(transcriberCaveat(settings: settings))
 
         Steps, in order:
         \(continuityStep(settings: settings, lecture: lecture))

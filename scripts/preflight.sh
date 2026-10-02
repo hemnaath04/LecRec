@@ -17,7 +17,7 @@ check() {
 echo "Dependencies"
 check ffmpeg       "brew install ffmpeg"
 check ffprobe      "brew install ffmpeg"
-check parakeet-mlx "uv tool install parakeet-mlx -U"
+check phonon "uv tool install fermion-research --with mlx --with mlx-audio --with mlx-lm --with soundfile --with scipy --with zstandard"
 check claude       "install Claude Code"
 check pdftotext    "brew install poppler"
 check pdftoppm     "brew install poppler"

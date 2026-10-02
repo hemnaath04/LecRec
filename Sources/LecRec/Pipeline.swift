@@ -107,7 +107,9 @@ final class Pipeline {
         try FileManager.default.createDirectory(
             at: srt.deletingLastPathComponent(), withIntermediateDirectories: true)
         try await Transcriber.run(input: cleaned, outputSRT: srt,
-                                  model: settings.transcriptionModel, log: onLog)
+                                  model: settings.transcriptionModel,
+                                  hotwords: courseVocabulary(for: lecture.course),
+                                  log: onLog)
 
         advance(.checking, "Comparing transcript length against the recording")
         let report = CoverageReport(
@@ -139,6 +141,41 @@ final class Pipeline {
     }
 
     /// Phase two, started by the user once they have decided about the deck.
+    /// Terms to nudge the decoder towards, pulled from the names of notes
+    /// already written for this course.
+    ///
+    /// Nothing about any particular course is hardcoded: a slug like
+    /// `2026-09-15-ngram-language-models` is exactly the vocabulary that keeps
+    /// recurring in that course, and those are the words a far-field decoder
+    /// mangles first. Empty for a course's first lecture, which is fine.
+    private func courseVocabulary(for course: Course) -> [String] {
+        let dir = URL(fileURLWithPath: settings.notesRoot)
+            .appendingPathComponent(course.slug, isDirectory: true)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
+        else { return [] }
+
+        var seen = Set<String>()
+        var terms: [String] = []
+        for name in names where name.hasSuffix(".md") {
+            let slug = name.replacingOccurrences(of: ".md", with: "")
+            // Drop the leading yyyy-MM-dd, keeping the topic words after it.
+            let parts = slug.split(separator: "-").dropFirst(3)
+            for part in parts {
+                let word = String(part).lowercased()
+                guard word.count > 3, !Self.commonWords.contains(word),
+                      seen.insert(word).inserted else { continue }
+                terms.append(word)
+            }
+        }
+        // The decoder nudges token by token, so a long list dilutes each term.
+        return Array(terms.prefix(30))
+    }
+
+    private static let commonWords: Set<String> = [
+        "part", "with", "from", "that", "this", "into", "then", "than", "also",
+        "more", "most", "what", "when", "where", "which", "while", "your", "ours",
+    ]
+
     func writeUp(_ pending: PendingLecture) async throws -> URL {
         var lecture = pending.lecture
         let report = CoverageReport(audioDuration: pending.audioDuration,
